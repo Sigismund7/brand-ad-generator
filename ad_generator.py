@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import re
 
@@ -37,24 +38,27 @@ from scraper import find_product_url, scrape_product_page
 from voc import gather_voc
 
 _MODEL = "gemini-2.5-flash"
+_IMAGE_MODEL = "imagen-4.0-generate-001"
 
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Gemini client setup
+# Gemini client — cached singleton
 # ---------------------------------------------------------------------------
+
+_client: genai.Client | None = None
+
 
 def _get_client() -> genai.Client:
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        raise ValueError(
-            "GEMINI_API_KEY is not set. Add it to your .env file or the sidebar."
-        )
-    return genai.Client(api_key=api_key)
-
-
-def _get_model() -> genai.Client:
-    """Kept for backward compatibility — returns the client."""
-    return _get_client()
+    global _client
+    if _client is None:
+        api_key = os.getenv("GEMINI_API_KEY", "")
+        if not api_key:
+            raise ValueError(
+                "GEMINI_API_KEY is not set. Add it to your .env file or the sidebar."
+            )
+        _client = genai.Client(api_key=api_key)
+    return _client
 
 
 def _call(client: genai.Client, system: str, user: str) -> str:
@@ -72,38 +76,17 @@ def _parse_json(raw: str) -> dict | list:
     Extract and parse a JSON block from a Gemini response.
     Handles ```json ... ``` fences and bare JSON.
     """
-    import json as _json2, time as _time2
-    _LOG = "/Users/daschelgorgenyi/Desktop/Test project Speed run/.cursor/debug-e762c2.log"
-
-    # Strip markdown code fences
     cleaned = re.sub(r"```(?:json)?", "", raw).replace("```", "").strip()
     try:
-        result = json.loads(cleaned)
-        # #region agent log
-        with open(_LOG, "a") as _f:
-            _f.write(_json2.dumps({"sessionId": "e762c2", "timestamp": int(_time2.time() * 1000), "hypothesisId": "A", "location": "ad_generator.py:_parse_json:ok", "message": "json parsed ok", "data": {"cleaned_len": len(cleaned), "result_type": type(result).__name__}}) + "\n")
-        # #endregion
-        return result
+        return json.loads(cleaned)
     except json.JSONDecodeError as e1:
-        # #region agent log
-        with open(_LOG, "a") as _f:
-            _f.write(_json2.dumps({"sessionId": "e762c2", "timestamp": int(_time2.time() * 1000), "hypothesisId": "A,B", "location": "ad_generator.py:_parse_json:first_fail", "message": "first json.loads failed", "data": {"error": str(e1), "cleaned_prefix": cleaned[:300], "cleaned_suffix": cleaned[-200:]}}) + "\n")
-        # #endregion
         # Last resort: find the first { or [ and try from there
         match = re.search(r"[{\[]", cleaned)
         if match:
             try:
-                result2 = json.loads(cleaned[match.start():])
-                # #region agent log
-                with open(_LOG, "a") as _f:
-                    _f.write(_json2.dumps({"sessionId": "e762c2", "timestamp": int(_time2.time() * 1000), "hypothesisId": "A,B", "location": "ad_generator.py:_parse_json:fallback_ok", "message": "fallback parse succeeded", "data": {"start_pos": match.start()}}) + "\n")
-                # #endregion
-                return result2
-            except json.JSONDecodeError as e2:
-                # #region agent log
-                with open(_LOG, "a") as _f:
-                    _f.write(_json2.dumps({"sessionId": "e762c2", "timestamp": int(_time2.time() * 1000), "hypothesisId": "A,B", "location": "ad_generator.py:_parse_json:fallback_fail", "message": "BOTH parses failed — raising", "data": {"e1": str(e1), "e2": str(e2), "cleaned_around_error": cleaned[max(0, e2.pos - 80):e2.pos + 80]}}) + "\n")
-                # #endregion
+                return json.loads(cleaned[match.start():])
+            except json.JSONDecodeError:
+                log.debug("JSON fallback parse failed. Raw prefix: %s", cleaned[:300])
                 raise
         raise
 
@@ -232,8 +215,6 @@ def _step2_synthesise_voc(
 # Image Generation — Imagen 3
 # ---------------------------------------------------------------------------
 
-_IMAGE_MODEL = "imagen-4.0-generate-001"
-
 def _build_image_prompt(product_intel: dict, angle: str, format_type: str = "") -> str:
     name = product_intel.get("name", "product")
     features = ", ".join(product_intel.get("key_features", [])[:3])
@@ -338,31 +319,7 @@ def _generate_ad_image(
     Calls Imagen to generate a product image for the given ad angle.
     Returns a base64-encoded JPEG string, or None if generation fails.
     """
-    import json as _json, time as _time, traceback as _tb
-    _LOG_OLD = "/Users/daschelgorgenyi/Desktop/Test project Speed run/.cursor/debug-e762c2.log"
-    _LOG = "/Users/daschelgorgenyi/Desktop/Test project Speed run/.cursor/debug-087295.log"
-
     prompt = _build_image_prompt(product_intel, angle, format_type)
-
-    # #region agent log (087295)
-    with open(_LOG, "a") as _f:
-        _f.write(_json.dumps({"sessionId": "087295", "timestamp": int(_time.time() * 1000), "hypothesisId": "H-A,H-C", "location": "ad_generator.py:_generate_ad_image:entry", "message": "image gen entry", "data": {"angle": angle, "format_type": format_type, "format_type_matched_branch": "testimonial" if "testimonial" in prompt.lower() else ("flat" if "flat-lay" in prompt.lower() else ("contrast" if "high-contrast" in prompt.lower() else "other")), "prompt_full": prompt}}) + "\n")
-    # #endregion
-
-    # #region agent log (e762c2 — legacy)
-    with open(_LOG_OLD, "a") as _f:
-        _f.write(_json.dumps({"sessionId": "e762c2", "timestamp": int(_time.time() * 1000), "hypothesisId": "D", "location": "ad_generator.py:_generate_ad_image:entry", "message": "image gen called", "data": {"angle": angle, "model": _IMAGE_MODEL, "prompt_prefix": prompt[:120]}}) + "\n")
-    # List available models on first call (angle == "Pain Point")
-    if angle == "Pain Point":
-        try:
-            img_models = [m.name for m in client.models.list() if "generat" in m.name.lower() or "imagen" in m.name.lower() or "flash" in m.name.lower()]
-            with open(_LOG_OLD, "a") as _f:
-                _f.write(_json.dumps({"sessionId": "e762c2", "timestamp": int(_time.time() * 1000), "hypothesisId": "C", "location": "ad_generator.py:_generate_ad_image:listmodels", "message": "available models", "data": {"models": img_models}}) + "\n")
-        except Exception as _le:
-            with open(_LOG_OLD, "a") as _f:
-                _f.write(_json.dumps({"sessionId": "e762c2", "timestamp": int(_time.time() * 1000), "hypothesisId": "C", "location": "ad_generator.py:_generate_ad_image:listmodels_err", "message": "list failed", "data": {"err": str(_le)}}) + "\n")
-    # #endregion
-
     try:
         response = client.models.generate_images(
             model=_IMAGE_MODEL,
@@ -374,27 +331,11 @@ def _generate_ad_image(
                 person_generation="ALLOW_ADULT",
             ),
         )
-        count = len(response.generated_images) if response.generated_images else 0
-        # #region agent log (087295)
-        with open(_LOG, "a") as _f:
-            _f.write(_json.dumps({"sessionId": "087295", "timestamp": int(_time.time() * 1000), "hypothesisId": "H-A,H-B,H-D", "location": "ad_generator.py:_generate_ad_image:response", "message": "image response received", "data": {"angle": angle, "format_type": format_type, "image_count": count, "has_generated_images_attr": hasattr(response, "generated_images")}}) + "\n")
-        # #endregion
-        # #region agent log (e762c2 — legacy)
-        with open(_LOG_OLD, "a") as _f:
-            _f.write(_json.dumps({"sessionId": "e762c2", "timestamp": int(_time.time() * 1000), "hypothesisId": "E", "location": "ad_generator.py:_generate_ad_image:response", "message": "got response", "data": {"image_count": count}}) + "\n")
-        # #endregion
         if response.generated_images:
             raw = response.generated_images[0].image.image_bytes
             return base64.b64encode(raw).decode("utf-8")
     except Exception as exc:
-        # #region agent log (087295)
-        with open(_LOG, "a") as _f:
-            _f.write(_json.dumps({"sessionId": "087295", "timestamp": int(_time.time() * 1000), "hypothesisId": "H-A,H-B,H-D", "location": "ad_generator.py:_generate_ad_image:exception", "message": "exception during generate_images", "data": {"angle": angle, "format_type": format_type, "error": str(exc), "type": type(exc).__name__, "traceback": _tb.format_exc()[-1000:]}}) + "\n")
-        # #endregion
-        # #region agent log (e762c2 — legacy)
-        with open(_LOG_OLD, "a") as _f:
-            _f.write(_json.dumps({"sessionId": "e762c2", "timestamp": int(_time.time() * 1000), "hypothesisId": "A,B,C", "location": "ad_generator.py:_generate_ad_image:exception", "message": "exception caught", "data": {"error": str(exc), "type": type(exc).__name__, "traceback": _tb.format_exc()[-800:]}}) + "\n")
-        # #endregion
+        log.warning("Image generation failed for angle '%s': %s", angle, exc)
     return None
 
 
@@ -664,13 +605,6 @@ def _step3_generate_ads(
     if not isinstance(data, list):
         raise ValueError(f"Expected a JSON array from Step 3, got: {type(data)}")
 
-    # #region agent log (087295)
-    import json as _j2, time as _t2
-    _LOG2 = "/Users/daschelgorgenyi/Desktop/Test project Speed run/.cursor/debug-087295.log"
-    with open(_LOG2, "a") as _f2:
-        _f2.write(_j2.dumps({"sessionId": "087295", "timestamp": int(_t2.time() * 1000), "hypothesisId": "H-C", "location": "ad_generator.py:_step3_generate_ads:format_types", "message": "AI returned format_types", "data": {"format_types": [i.get("format_type", "") for i in data], "angles": [i.get("angle", "") for i in data]}}) + "\n")
-    # #endregion
-
     variations: list[AdVariation] = []
     for item in data:
         angle = item.get("angle", "")
@@ -720,7 +654,7 @@ def generate_ads(request: GenerateRequest) -> AdOutput:
       ProductNotFoundError — auto-discovery failed and no product_url provided
     """
     errors: list[str] = []
-    model = _get_model()
+    model = _get_client()
 
     # --- Resolve product URL ---
     if request.product_url:
