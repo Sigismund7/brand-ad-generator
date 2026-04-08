@@ -57,6 +57,9 @@ class AdOutput:
     voc_summary: VocSummary
     product_intel: dict               # raw Step 1 JSON for display in research panel
     errors: list[str] = field(default_factory=list)  # non-fatal warnings
+    product_image_url: str | None = None   # canonical product image URL from scraper
+    product_image_b64: str | None = None   # base64 JPEG for use in ad preview
+    brand_logo_b64: str | None = None      # base64-encoded brand logo for avatar
 
 
 class ProductNotFoundError(Exception):

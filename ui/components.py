@@ -14,9 +14,9 @@ _ANGLE_COLORS = {
     "Social Proof": ("#22D3A0", "rgba(34, 211, 160, 0.08)"),
 }
 _ANGLE_LABELS = {
-    "Pain Point":   "PAS Framework",
-    "Aspiration":   "BAB Framework",
-    "Social Proof": "Social Proof + FOMO",
+    "Pain Point":   "Pain Point",
+    "Aspiration":   "Aspiration",
+    "Social Proof": "Social Proof",
 }
 
 
@@ -28,13 +28,13 @@ def char_badge(text: str, limit: int) -> str:
     return f'<span class="{cls}">{icon} {n}/{limit}</span>'
 
 
-def ad_card(variation: AdVariation, idx: int, brand_name: str = "") -> None:
+def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_image_b64: str | None = None, logo_b64: str | None = None) -> None:
     color, bg = _ANGLE_COLORS.get(variation.angle, ("#4E7090", "rgba(78,112,144,0.08)"))
-    framework_label = _ANGLE_LABELS.get(variation.angle, variation.framework)
+    framework_label = variation.framework or _ANGLE_LABELS.get(variation.angle, variation.angle)
 
     st.markdown(
         f'<div class="meta-preview-label">'
-        f'<span class="adg-badge" style="background:{bg};color:{color};">{framework_label}</span>'
+        f'<span class="adg-badge" style="background:{bg};color:{color};">{html.escape(framework_label)}</span>'
         f'<span class="adg-angle">{html.escape(variation.angle)}</span>'
         f'</div>',
         unsafe_allow_html=True,
@@ -56,6 +56,12 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "") -> None:
                 f'src="data:image/jpeg;base64,{variation.image_b64}" '
                 f'alt="Ad creative" style="width:100%;display:block;" />'
             )
+        elif product_image_b64:
+            image_html = (
+                f'<img class="meta-ad-image" '
+                f'src="data:image/jpeg;base64,{product_image_b64}" '
+                f'alt="Product image" style="width:100%;display:block;" />'
+            )
         else:
             image_html = (
                 '<div class="meta-image-placeholder">'
@@ -68,11 +74,16 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "") -> None:
         safe_brand = html.escape(brand_name or "Brand")
         domain = (brand_name or "brand").lower().replace(" ", "") + ".com"
 
+        if logo_b64:
+            avatar_content = f'<img src="data:image/png;base64,{logo_b64}" alt="{safe_brand} logo" />'
+        else:
+            avatar_content = initial
+
         st.markdown(
             f"""
             <div class="meta-card">
               <div class="meta-post-header">
-                <div class="meta-avatar">{initial}</div>
+                <div class="meta-avatar">{avatar_content}</div>
                 <div class="meta-page-info">
                   <div class="meta-page-name">{safe_brand}</div>
                   <div class="meta-sponsored">Sponsored &nbsp;·&nbsp; 🌐</div>
@@ -115,17 +126,15 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "") -> None:
             unsafe_allow_html=True,
         )
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns([5, 4, 3])
         with col1:
             st.markdown('<div class="adg-field-label">Headline</div>', unsafe_allow_html=True)
             st.code(variation.headline, language=None)
-            st.markdown(char_badge(variation.headline, 40), unsafe_allow_html=True)
+            st.markdown(char_badge(variation.headline, 27), unsafe_allow_html=True)
         with col2:
             st.markdown('<div class="adg-field-label">Description</div>', unsafe_allow_html=True)
             st.code(variation.description, language=None)
             st.markdown(char_badge(variation.description, 30), unsafe_allow_html=True)
-
-        col3, _ = st.columns([1, 3])
         with col3:
             st.markdown('<div class="adg-field-label">CTA Button</div>', unsafe_allow_html=True)
             st.code(variation.cta, language=None)

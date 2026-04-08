@@ -171,3 +171,146 @@ def scrape_product_page(url: str) -> str:
 
     # Trim to a reasonable size so we don't blow Gemini's context window
     return content[:12_000]
+
+
+def extract_product_image_url(url: str) -> str | None:
+    """
+    Fetch a product page and return the best candidate product image URL.
+
+    Priority order:
+    1. <meta property="og:image"> — most reliable across e-commerce sites
+    2. <meta name="twitter:image">
+    3. First "image" key in schema.org Product JSON-LD
+    4. Largest <img> whose src path contains a product-signal keyword
+    """
+    import json as _json
+
+    try:
+        resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+        resp.raise_for_status()
+    except Exception:
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # 1. og:image
+    og = soup.find("meta", property="og:image")
+    if og and og.get("content"):
+        return _normalize_url(og["content"], url) or og["content"]
+
+    # 2. twitter:image
+    tw = soup.find("meta", attrs={"name": "twitter:image"})
+    if not tw:
+        tw = soup.find("meta", property="twitter:image")
+    if tw and tw.get("content"):
+        return _normalize_url(tw["content"], url) or tw["content"]
+
+    # 3. schema.org Product JSON-LD
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = _json.loads(script.string or "")
+            # data can be a list or a dict
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                # Handle @graph wrapper
+                if isinstance(item, dict) and "@graph" in item:
+                    items = item["@graph"]
+                    break
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                types = item.get("@type", "")
+                if isinstance(types, str):
+                    types = [types]
+                if "Product" in types:
+                    img = item.get("image")
+                    if isinstance(img, str) and img:
+                        return _normalize_url(img, url) or img
+                    if isinstance(img, list) and img:
+                        candidate = img[0] if isinstance(img[0], str) else img[0].get("url", "")
+                        if candidate:
+                            return _normalize_url(candidate, url) or candidate
+                    if isinstance(img, dict):
+                        candidate = img.get("url", "")
+                        if candidate:
+                            return _normalize_url(candidate, url) or candidate
+        except Exception:
+            continue
+
+    # 4. Largest <img> with a product-signal in its src
+    _PRODUCT_SIGNALS = ("product", "pdp", "/images/", "/img/", "/media/", "/photos/")
+    _SKIP_SIGNALS = ("logo", "icon", "sprite", "placeholder", "blank", "pixel")
+    best_url: str | None = None
+    best_area = 0
+    for img_tag in soup.find_all("img"):
+        src = img_tag.get("src") or img_tag.get("data-src") or img_tag.get("data-lazy-src") or ""
+        if not src:
+            continue
+        src_lower = src.lower()
+        if any(s in src_lower for s in _SKIP_SIGNALS):
+            continue
+        if not any(s in src_lower for s in _PRODUCT_SIGNALS):
+            continue
+        try:
+            w = int(img_tag.get("width", 0) or 0)
+            h = int(img_tag.get("height", 0) or 0)
+            area = w * h
+        except (ValueError, TypeError):
+            area = 0
+        if area > best_area:
+            best_area = area
+            best_url = src
+    if best_url:
+        return _normalize_url(best_url, url) or best_url
+
+    return None
+
+
+def fetch_brand_logo_url(brand_url: str) -> str | None:
+    """
+    Fetch the brand homepage and return the best candidate logo URL.
+
+    Priority order:
+    1. <img> whose class, alt, id, or src contains "logo"
+    2. <link rel="apple-touch-icon"> — high-res square icon, ideal for avatars
+    3. <link rel="icon"> or <link rel="shortcut icon"> — favicon fallback
+    """
+    try:
+        resp = requests.get(brand_url, headers=_HEADERS, timeout=_TIMEOUT)
+        resp.raise_for_status()
+    except Exception:
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # 1. <img> with "logo" in class / alt / id / src
+    for img_tag in soup.find_all("img"):
+        src = img_tag.get("src") or img_tag.get("data-src") or ""
+        alt = img_tag.get("alt") or ""
+        cls = " ".join(img_tag.get("class") or [])
+        tag_id = img_tag.get("id") or ""
+        combined = (src + " " + alt + " " + cls + " " + tag_id).lower()
+        if "logo" in combined and src:
+            absolute = _normalize_url(src, brand_url) or src
+            if absolute:
+                return absolute
+
+    # 2. apple-touch-icon (high-res, square — great for circular avatars)
+    for rel_value in ("apple-touch-icon", "apple-touch-icon-precomposed"):
+        link = soup.find("link", rel=lambda r: r and rel_value in (r if isinstance(r, list) else [r]))
+        if link and link.get("href"):
+            absolute = _normalize_url(link["href"], brand_url) or link["href"]
+            if absolute:
+                return absolute
+
+    # 3. Standard favicon (SVG/PNG only — .ico files look bad at small sizes)
+    for rel_value in ("icon", "shortcut icon"):
+        link = soup.find("link", rel=lambda r: r and rel_value in (r if isinstance(r, list) else [r]))
+        if link and link.get("href"):
+            href = link["href"]
+            if not href.lower().endswith(".ico"):
+                absolute = _normalize_url(href, brand_url) or href
+                if absolute:
+                    return absolute
+
+    return None

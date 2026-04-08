@@ -281,7 +281,7 @@ def _render_results(output: AdOutput) -> None:
     )
 
     for i, variation in enumerate(output.variations):
-        ad_card(variation, i, output.brand_name)
+        ad_card(variation, i, output.brand_name, product_image_b64=output.product_image_b64, logo_b64=output.brand_logo_b64)
 
     st.divider()
     voc_panel(output.voc_summary, output.product_intel)

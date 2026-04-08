@@ -142,16 +142,17 @@ input:focus, textarea:focus {
     letter-spacing: 0.05em !important;
 }
 
-/* Code blocks */
+/* Code blocks — white background, Meta/system font to match ad preview */
 [data-testid="stCode"] {
-    background-color: rgba(4, 12, 30, 0.85) !important;
-    border: 1px solid var(--border) !important;
+    background-color: #ffffff !important;
+    border: 1px solid #dddfe2 !important;
     border-radius: var(--radius-sm) !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06) !important;
 }
 [data-testid="stCode"] pre, [data-testid="stCode"] code {
-    font-family: var(--font-mono) !important;
-    font-size: 0.8rem !important;
-    color: var(--text) !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+    font-size: 0.88rem !important;
+    color: #050505 !important;
     background: transparent !important;
     white-space: pre-wrap !important;
     word-break: break-word !important;
@@ -340,20 +341,20 @@ hr { border-color: var(--border) !important; }
 
 /* Field labels */
 .adg-field-label {
-    font-family: var(--font-mono);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     font-size: 0.62rem;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--text-dim);
+    color: #65676b;
     margin-bottom: 0.3rem;
     margin-top: 1rem;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 /* Char counters */
-.adg-char-ok   { color: var(--ok);     font-size: 0.68rem; font-family: var(--font-mono); }
-.adg-char-warn { color: var(--warn);   font-size: 0.68rem; font-family: var(--font-mono); }
-.adg-char-over { color: var(--danger); font-size: 0.68rem; font-family: var(--font-mono); }
+.adg-char-ok   { color: var(--ok);     font-size: 0.68rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+.adg-char-warn { color: var(--warn);   font-size: 0.68rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+.adg-char-over { color: var(--danger); font-size: 0.68rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
 
 /* Audience note */
 .adg-audience {
@@ -653,6 +654,15 @@ hr { border-color: var(--border) !important; }
     font-weight: 700;
     flex-shrink: 0;
     line-height: 1;
+    overflow: hidden;
+}
+
+.meta-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
 }
 
 .meta-page-info { flex: 1; min-width: 0; }

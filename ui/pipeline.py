@@ -7,7 +7,10 @@ import traceback
 
 import streamlit as st
 
+import base64
+
 from ad_generator import (
+    _download_image_bytes,
     _get_client,
     _generate_ad_image,
     _step1_extract_product_intel,
@@ -15,7 +18,7 @@ from ad_generator import (
     _step3_generate_ads,
 )
 from models import AdOutput, GenerateRequest, ProductNotFoundError
-from scraper import find_product_url, scrape_product_page
+from scraper import extract_product_image_url, fetch_brand_logo_url, find_product_url, scrape_product_page
 from voc import gather_voc
 
 
@@ -94,6 +97,29 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
     page_content = scrape_product_page(product_url)
     st.write("OK Product page scraped")
 
+    st.write("// Extracting product image...")
+    product_image_url = extract_product_image_url(product_url)
+    if product_image_url:
+        st.write("OK Product image found")
+    else:
+        st.write("WARN Could not extract product image — using generated only")
+    product_image_bytes = _download_image_bytes(product_image_url) if product_image_url else None
+    product_image_b64 = base64.b64encode(product_image_bytes).decode() if product_image_bytes else None
+
+    st.write("// Searching for brand logo...")
+    logo_url = fetch_brand_logo_url(request.brand_url)
+    if logo_url:
+        logo_bytes = _download_image_bytes(logo_url)
+        brand_logo_b64 = base64.b64encode(logo_bytes).decode() if logo_bytes else None
+        if brand_logo_b64:
+            st.write("OK Brand logo found")
+        else:
+            st.write("WARN Brand logo URL found but could not download")
+            brand_logo_b64 = None
+    else:
+        st.write("WARN No brand logo found — using initials")
+        brand_logo_b64 = None
+
     st.write("// Gathering consumer voice data (Reddit · YouTube · Google)...")
     voc_summary = gather_voc(request, errors)
     reddit_n = len(voc_summary.reddit_findings)
@@ -131,7 +157,10 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
     st.write("// Generating ad creatives with Gemini Imagen...")
     images_ok = 0
     for variation in variations:
-        img = _generate_ad_image(client, product_intel, variation.angle, variation.format_type)
+        img = _generate_ad_image(
+            client, product_intel, variation.angle, variation.format_type,
+            product_image_bytes=product_image_bytes,
+        )
         variation.image_b64 = img
         if img:
             images_ok += 1
@@ -154,4 +183,7 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
         voc_summary=voc_summary,
         product_intel=product_intel,
         errors=errors,
+        product_image_url=product_image_url,
+        product_image_b64=product_image_b64,
+        brand_logo_b64=brand_logo_b64,
     )

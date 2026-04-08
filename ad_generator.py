@@ -118,7 +118,8 @@ Extract the following and return as JSON:
   "brand_voice": "one sentence describing brand tone and style",
   "target_audience_signals": "who this product appears to be made for",
   "pain_points_solved": ["pain point 1", "pain point 2", ...],
-  "social_proof_signals": ["any reviews, awards, press mentions, customer counts found"]
+  "social_proof_signals": ["any reviews, awards, press mentions, customer counts found"],
+  "visual_appearance": "concise physical description of what the product looks like — colour, shape, material, size, form factor (e.g. 'white mesh running shoe with bright orange foam midsole and black outsole')"
 }}
 """.strip()
 
@@ -220,24 +221,30 @@ def _build_image_prompt(product_intel: dict, angle: str, format_type: str = "") 
     features = ", ".join(product_intel.get("key_features", [])[:3])
     brand_voice = product_intel.get("brand_voice", "")
     audience = product_intel.get("target_audience_signals", "")
+    visual_appearance = product_intel.get("visual_appearance", "")
 
     feature_line = f" Key features: {features}." if features else ""
     brand_line = f" Brand feel: {brand_voice}." if brand_voice else ""
     audience_line = f" Target customer: {audience}." if audience else ""
+    # Anchor every prompt with a visual description so Imagen renders the actual product
+    product_ref = f"{name} ({visual_appearance})" if visual_appearance else name
 
     # Format-type-specific overrides (take precedence over angle defaults)
     if format_type == "Testimonial Card":
         return (
-            f"Clean Meta/Instagram product photography for a testimonial ad for {name}.{feature_line}"
-            f" The {name} is centered on a plain light grey or off-white background with generous "
-            f"empty space on the lower third for a quote overlay. Studio lighting, soft shadows. "
-            f"Product fills 50% of the frame, perfectly sharp. Photorealistic commercial quality."
-            f"{brand_line} No people. No text. No logos. Square 1:1 format."
+            f"Premium product photography for Meta/Instagram feed. "
+            f"The product is a {product_ref}.{feature_line}"
+            f" The {product_ref} is the clear hero, displayed on a clean off-white or warm neutral surface "
+            f"with soft studio lighting and gentle shadows. Product fills 60% of the frame, "
+            f"perfectly sharp with fine detail visible. Generous empty space above and below "
+            f"the product. Warm, trustworthy, community feel.{brand_line}"
+            f" No people. No text. No logos. Square 1:1 format."
         )
     elif format_type == "Flat Lay":
         return (
-            f"Editorial flat-lay product photograph for Meta/Instagram ad for {name}.{feature_line}"
-            f" Top-down overhead shot: the {name} arranged elegantly with 2-3 complementary props "
+            f"Editorial flat-lay product photograph for Meta/Instagram ad. "
+            f"The product is a {product_ref}.{feature_line}"
+            f" Top-down overhead shot: the {product_ref} arranged elegantly with 2-3 complementary props "
             f"(neutral lifestyle objects that match the brand aesthetic) on a textured surface "
             f"(linen, marble, or natural wood). Warm, even studio lighting. "
             f"Looks like a high-end editorial magazine spread.{brand_line}"
@@ -245,28 +252,28 @@ def _build_image_prompt(product_intel: dict, angle: str, format_type: str = "") 
         )
     elif format_type in ("Bold Text Overlay", "Problem-Agitate-Solution"):
         return (
-            f"High-contrast Meta/Instagram feed ad background for {name}.{feature_line}"
-            f" The {name} is positioned dramatically — left or right third of frame — "
+            f"High-contrast Meta/Instagram feed ad. The product is a {product_ref}.{feature_line}"
+            f" The {product_ref} is positioned dramatically — left or right third of frame — "
             f"against a deep dark background (charcoal, navy, or near-black) with a single "
-            f"powerful directional light source creating strong shadows and highlights. "
+            f"powerful directional light source creating strong shadows and highlights on the product. "
             f"Leaves significant clear space (right or left half) for bold text overlay. "
             f"Photorealistic, high drama, premium commercial quality.{brand_line}"
             f" No text. No logos. Square 1:1 format."
         )
     elif format_type == "Before/After":
         return (
-            f"Transformation Meta/Instagram ad creative for {name}.{feature_line}"
+            f"Transformation Meta/Instagram ad. The product is a {product_ref}.{feature_line}"
             f" Split composition: left half shows a muted, desaturated lifestyle scene "
             f"representing struggle or the 'before' state; right half shows the same scene "
             f"bright, vibrant, and joyful representing the transformed outcome. "
-            f"The {name} is featured prominently in the right (after) half. "
+            f"The {product_ref} is featured prominently and clearly visible in the right (after) half. "
             f"No before/after labels. Photorealistic.{brand_line}{audience_line}"
             f" No text overlays. No logos. Square 1:1 format."
         )
     elif format_type == "Offer/Promo":
         return (
-            f"High-energy Meta/Instagram promotional ad creative for {name}.{feature_line}"
-            f" The {name} is the hero, centred against a bold brand-coloured background "
+            f"High-energy Meta/Instagram promotional ad. The product is a {product_ref}.{feature_line}"
+            f" The {product_ref} is the hero, centred against a bold brand-coloured background "
             f"with a clean gradient or solid fill. Bright, energetic studio lighting. "
             f"Product fills 60% of the frame. Leaves clear space at top and bottom for "
             f"price/offer text overlays. Optimistic, urgent feel.{brand_line}"
@@ -276,8 +283,8 @@ def _build_image_prompt(product_intel: dict, angle: str, format_type: str = "") 
     # Angle-based fallbacks (Product Hero is also the Pain Point default)
     if angle == "Pain Point":
         return (
-            f"High-impact Meta/Instagram feed ad creative for {name}.{feature_line}"
-            f" Hero product shot: the {name} isolated on a clean gradient background "
+            f"High-impact Meta/Instagram feed ad. The product is a {product_ref}.{feature_line}"
+            f" Hero product shot: the {product_ref} isolated on a clean gradient background "
             f"(light grey to white), dramatic studio rim lighting from the side and above "
             f"that reveals every texture and contour of the product. "
             f"The product fills 70% of the frame. Extremely sharp focus. "
@@ -287,11 +294,11 @@ def _build_image_prompt(product_intel: dict, angle: str, format_type: str = "") 
         )
     elif angle == "Aspiration":
         return (
-            f"Aspirational Meta/Instagram lifestyle ad creative for {name}.{feature_line}"
-            f" The product is shown in a beautiful real-world setting — "
+            f"Aspirational Meta/Instagram lifestyle ad. The product is a {product_ref}.{feature_line}"
+            f" The {product_ref} is shown in active use in a beautiful real-world setting — "
             f"outdoors in golden-hour afternoon light, warm amber and orange tones."
-            f" A person's lower body (feet, legs) is actively using the product, "
-            f"face not shown. Dynamic, in-motion feel."
+            f" A person's lower body (feet, legs) is shown actively using the {product_ref}; "
+            f"the product must be clearly visible and identifiable in the frame. Dynamic, in-motion feel."
             f" Shallow depth of field, bokeh background. "
             f"Looks like a premium editorial shoot for a major brand campaign."
             f"{brand_line}{audience_line}"
@@ -299,14 +306,28 @@ def _build_image_prompt(product_intel: dict, angle: str, format_type: str = "") 
         )
     else:  # Social Proof
         return (
-            f"Authentic lifestyle Meta/Instagram ad creative for {name}.{feature_line}"
-            f" Candid, real-world moment — the product in use in an everyday relatable setting."
-            f" Natural indoor or outdoor light, feels warm and genuine."
-            f" May show a person's hands or feet using the product; face optional but friendly if shown."
+            f"Authentic lifestyle Meta/Instagram ad. The product is a {product_ref}.{feature_line}"
+            f" Candid, real-world moment — a person actively using the {product_ref} in an everyday "
+            f"relatable setting. The {product_ref} must be clearly visible and identifiable in the frame. "
+            f"Natural indoor or outdoor light, feels warm and genuine."
+            f" The person's face may be shown — warm, happy, friendly expression."
             f" Community vibe, feels like a real customer photo but shot professionally."
             f"{brand_line}{audience_line}"
             f" No text overlays. No logos. Square 1:1 format."
         )
+
+
+def _download_image_bytes(url: str) -> bytes | None:
+    """Download an image from a URL and return raw bytes, or None on failure."""
+    import requests as _requests
+
+    try:
+        resp = _requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        return resp.content
+    except Exception as exc:
+        log.warning("Could not download product image from %s: %s", url, exc)
+        return None
 
 
 def _generate_ad_image(
@@ -314,22 +335,48 @@ def _generate_ad_image(
     product_intel: dict,
     angle: str,
     format_type: str = "",
+    product_image_bytes: bytes | None = None,
 ) -> str | None:
     """
     Calls Imagen to generate a product image for the given ad angle.
+    When product_image_bytes is provided, attempts a subject-reference call first
+    so Imagen anchors the creative to the real product; falls back to text-only.
     Returns a base64-encoded JPEG string, or None if generation fails.
     """
     prompt = _build_image_prompt(product_intel, angle, format_type)
+    img_config = genai_types.GenerateImagesConfig(
+        number_of_images=1,
+        aspect_ratio="1:1",
+        output_mime_type="image/jpeg",
+        person_generation="ALLOW_ADULT",
+    )
+
+    # Attempt reference-image call when we have the real product photo
+    if product_image_bytes:
+        try:
+            ref_image = genai_types.ReferenceImage(
+                reference_type="SUBJECT",
+                reference_image=genai_types.Image(image_bytes=product_image_bytes),
+            )
+            response = client.models.generate_images(
+                model=_IMAGE_MODEL,
+                prompt=prompt,
+                reference_images=[ref_image],
+                config=img_config,
+            )
+            if response.generated_images:
+                raw = response.generated_images[0].image.image_bytes
+                return base64.b64encode(raw).decode("utf-8")
+            log.warning("Reference-image call returned 0 images for angle '%s'; falling back", angle)
+        except Exception as exc:
+            log.warning("Reference-image call failed for angle '%s': %s — falling back to text-only", angle, exc)
+
+    # Text-only fallback (also the primary path when no product image is available)
     try:
         response = client.models.generate_images(
             model=_IMAGE_MODEL,
             prompt=prompt,
-            config=genai_types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="1:1",
-                output_mime_type="image/jpeg",
-                person_generation="ALLOW_ADULT",
-            ),
+            config=img_config,
         )
         if response.generated_images:
             raw = response.generated_images[0].image.image_bytes
@@ -348,91 +395,175 @@ You are one of the world's best direct-response copywriters AND a senior
 performance creative strategist specialising in high-converting static Meta
 (Facebook / Instagram) ads for cold prospecting audiences.
 
-You follow both the copywriting constitution and the static creative direction
-framework below without exception.
+You follow every rule in the copywriting constitution and static creative
+direction framework below without exception.
 
 ═══════════════════════════════════════════════════════════════
-COPYWRITING CONSTITUTION
+PART 1 — COPYWRITING CONSTITUTION
 ═══════════════════════════════════════════════════════════════
 
-THE 5 NON-NEGOTIABLE RULES
-1. Hook within 125 chars — The first 125 characters of primary_text are all
-   that appear before "See More" on mobile. Everything critical must land there.
-2. Never use "you" generically — Open with a specific persona callout.
-   Right: "Attention runners over 40 who..."
-   Wrong: "Are you tired of..."
-3. One angle per ad — Each variation makes exactly one promise. No feature
-   lists. No multi-benefit rambling.
-4. Use their words, not marketing words — Draw directly from the
-   exact_phrases_to_use list. Zero buzzwords (innovative, game-changing,
-   revolutionary, powerful, seamless).
-5. 6th-grade reading level — Every sentence under 15 words. Short paragraphs.
-   Conversational. If it sounds like a brochure, rewrite it.
+━━━ THE HOOK IS EVERYTHING ━━━
+The hook is the first line of primary_text. If it fails, the ad is invisible.
+You have under 3 seconds. The hook must land entirely within the first
+80–115 characters. The first 5 words must front-load the benefit or tension.
 
-THE 3 VARIATION FRAMEWORKS
-Variation 1 — PAS (Pain → Agitate → Solution)
-  • Framework: Name the pain → make it feel worse → present the product as relief
-  • Hook formula: investment hook or problem-question hook
-    Examples: "I spent $400 on orthotics before I tried..."
-              "Running 5Ks but your knees ache for days after?"
-  • Psychological trigger: Loss aversion (pain of not acting > gain of acting)
+SIX HOOK FORMULAS — use a different one for each variation:
 
-Variation 2 — BAB (Before → After → Bridge)
-  • Framework: Describe life now (struggle) → paint the destination (outcome)
-    → introduce the product as the path between them
-  • Hook formula: transformation hook
-    Examples: "What if better sleep didn't require a prescription?"
-              "Imagine finishing a half-marathon without the next-day limp..."
-  • Psychological trigger: Aspiration — identity-level desire, who they become
+1. Pain-Point Question — get inside their head with a question they're asking
+   "Tired of morning puffiness?"
+   "Still waking up with back pain every single day?"
+   "Why does every moisturiser leave your skin greasy by noon?"
 
-Variation 3 — Social Proof + FOMO
-  • Framework: Open with community signal or implied testimony → validate with
-    specifics → create urgency
-  • Hook formula: social proof hook or scarcity/surprise hook
-    Examples: "47,000 runners switched. Here's why."
-              "I can't believe I didn't find this sooner..."
-              Use verbatim consumer phrases where possible.
-  • Psychological trigger: Social proof + fear of missing out
+2. Bold Outcome Statement — lead with the result, not the product
+   "Wake up glowing. Every single morning."
+   "Flat-to-voluminous hair in 60 seconds."
+   "Finally, a wallet that fits in your front pocket."
 
-FIELD-LEVEL RULES
+3. Specific Proof Hook — open with a number or data point
+   "12,000+ five-star reviews can't be wrong."
+   "Sold out 3x. Back in stock TODAY."
+   "Results in 14 days — or your money back."
+
+4. Curiosity Gap — leave something unsaid that makes them need to know more
+   "The one thing dermatologists won't tell you about SPF."
+   "We almost didn't launch this product."
+   "This $29 tool replaced my entire skincare shelf."
+
+5. Us vs. Them — position against the status quo
+   "Your old blender wishes it could do this."
+   "What $200 serums do — for $34."
+
+6. Social Proof Lead — let a customer speak first
+   "'I didn't think it would work — until it did.' — Sarah, verified buyer"
+   "'Best purchase I made all year.' 4.9★ from 8,400 reviews."
+
+HOOK RULES (non-negotiable):
+  • Always product-led, never a generic slogan ("Quality you can trust" = skip)
+  • Must connect to a real pain point, desire, or proof element
+  • If the hook would work with a competitor's name swapped in, rewrite it
+  • Never start with the brand name — lead with value, not the logo
+
+━━━ COPYWRITING FRAMEWORKS ━━━
+Pick ONE framework per variation. Do not overstuff or mix frameworks.
+
+PAS — Problem, Agitate, Solve
+  Best for: Pain Point angle, cold audiences who already feel the pain
+  Problem:  Name the pain the audience already feels
+  Agitate:  Make it worse — describe consequences of inaction
+  Solve:    Present the product as the clear, simple fix
+  Example: "Tired of waking up with back pain? (P) It's not just discomfort —
+  it's ruining your sleep, mood, and whole day. (A) Our orthopedic pillow is
+  designed by spine specialists to fix alignment overnight. (S)"
+
+BAB — Before, After, Bridge
+  Best for: Aspiration angle, transformation products
+  Before:   Describe the current frustrating state
+  After:    Paint the desired outcome vividly
+  Bridge:   Position the product as the path between the two
+  Example: "Dull, tired-looking skin every morning. (B) Imagine waking up with
+  a genuine glow — no filter needed. (A) Our Vitamin C serum bridges the gap
+  with clinical-strength brightening in just 2 weeks. (Br)"
+
+AIDA — Attention, Interest, Desire, Action
+  Best for: Mid-to-high ticket, multi-step funnels, longer primary text
+  Attention: Hook with bold statement or question
+  Interest:  Relatable benefit or surprising fact
+  Desire:    Emotional want — transformation or social proof
+  Action:    Clear, specific CTA
+
+FAB — Features, Advantages, Benefits
+  Best for: Product-forward ads, technical products, comparison ads
+  Feature:     What the product has or does
+  Advantage:   Why that feature matters vs. alternatives
+  Benefit:     How it improves the buyer's life
+  Example: "100% organic bamboo fabric. (F) 3x softer than cotton, naturally
+  antibacterial. (A) Sheets that feel like a luxury hotel and stay fresh all
+  week. (B)"
+
+Value Stack
+  Best for: Justifying price, bundles, offers
+  List what they get — product, bonuses, guarantees, savings
+  Make total perceived value far exceed the price
+  Close with "All for just $X" or "Try it risk-free"
+
+━━━ TONE & VOICE ━━━
+  • Write like a smart friend texting a recommendation, not a brand announcing
+  • Second person always: "you" and "your" — never "our customers" or "one"
+  • Short sentences. Fragments are fine. Rhythm matters more than grammar rules
+  • Conversational over corporate: "This stuff actually works" not "Experience
+    our innovative solution"
+  • Never start with "we" in the first line — the ad is about THEM, not you
+  • Never use superlatives without proof: "best ever" = empty claim
+  • Emojis: 1–2 max, purposeful only (never decorative, never a wall of them)
+  • No ALL CAPS sentences; one word for emphasis is fine
+
+━━━ FIELD-LEVEL RULES ━━━
 primary_text:
-  • Structure: Hook (persona callout) → Problem/Desire → Evidence or bridge
-    → Stinger + CTA
-  • Max: 3-5 short paragraphs. Every line must earn its place.
-  • No period on the final CTA line.
+  • Hook lands in the first 80–115 characters
+  • Structure: Hook → Problem/Desire → Evidence or bridge → Stinger + CTA
+  • 3–5 short paragraphs maximum. Every line must earn its place.
+  • No period on the final CTA line
+  • No walls of text with zero line breaks — mobile readers scan in chunks
+  • Short-form (50–150 chars): best for simple offers and product hero creatives
+  • Long-form (300+ chars): can work for PAS/BAB on cold audiences, but the
+    first line still must earn the scroll
 
-headline (≤40 chars):
-  • Benefit-driven, not feature-driven
+headline (target ≤27 chars, hard max 40):
+  • Benefit-driven, never feature-driven
   • Use a number when possible
-  • Action verbs: Get, Stop, Start, End, Finally, Try
+  • Action verbs: Get, Stop, Start, End, Finally, Try, See, Feel
   • Never end with a question mark
+  • Think of it as the "caption" for the image
+  • Examples: "Run Faster. Hurt Less." / "Rated #1 by Runners" / "30% Off Today"
 
 description (≤30 chars):
-  • One supporting detail: price point, offer, USP, or risk reversal
-  • Examples: "Free shipping. 30-day returns."
+  • One supporting detail only: price, offer, USP, or risk reversal
+  • Treat as reinforcement — never put critical info here (often hidden)
+  • Examples: "Free shipping. 30-day returns." / "4.9★ — 12K reviews"
 
-cta_button — pick exactly one:
-  • "Shop Now"   — warm or retargeting audiences
-  • "Learn More" — cold traffic, complex or high-priced products
-  • "Get Offer"  — when there is a genuine discount
-  • "Order Now"  — impulse purchases with urgency
+cta_button — pick exactly one STRONG CTA (FORBIDDEN: "Learn More", "Click Here",
+"Check It Out", "See More" — these kill conversions):
+  • "Shop Now"                — product discovery, warm audiences
+  • "Get Yours"               — scarcity angle
+  • "Get Yours Before They're Gone" — scarcity + urgency
+  • "Try It Risk-Free"        — risk reversal
+  • "Get Offer"               — genuine discount available
+  • "Claim Your [X]% Off"     — specific discount
+  • "Order Now"               — impulse urgency
+  • "Shop the Collection"     — multi-product or catalogue
+  • "See the Difference"      — transformation products
+  • "Build Your Bundle"       — multi-product upsell
 
 audience_note:
-  • One sentence describing who to target in Meta Ads Manager
-    (demographics, interests, behaviours — not generic)
+  • One sentence for Meta Ads Manager targeting
+  • Must be specific: demographics + interests + behaviours
+  • Never generic ("people interested in the product category")
 
-PSYCHOLOGICAL TRIGGER CHECKLIST
-Each ad MUST contain ≥2 of:
-  ✓ Specificity — real numbers over vague claims ("dropped 2 sizes" > "lost weight")
-  ✓ Loss framing — what they lose by not acting
-  ✓ Social proof — real or implied community
-  ✓ Identity signal — who they'll become, not just what they'll get
-  ✓ Risk reversal — removes barrier to clicking
-  ✓ Urgency — only if the product genuinely supports it; never fabricated
-═══════════════════════════════════════════════════════════════
+━━━ PERSUASION TRIGGERS ━━━
+Each ad MUST contain ≥2 of (specific beats vague every time):
+  ✓ Specificity — real numbers: "dropped 2 sizes in 6 weeks" not "lost weight"
+  ✓ Urgency — real deadlines: "Ends tonight" beats "while supplies last"
+  ✓ Scarcity — specific counts: "23 left in stock" beats "selling fast"
+  ✓ Social proof — volume + rating: "4.8★ from 11,000+ reviews"
+  ✓ Loss framing — "Don't let another morning start with back pain"
+  ✓ Identity signal — who they become, not just what they get
+  ✓ Risk reversal — "love it or return it, no questions asked"
+
+━━━ WHAT NOT TO DO ━━━
+Violating any of these will produce a bad ad. Check every variation:
+  ✗ No generic slogans disconnected from the product
+  ✗ No feature dumps — every feature must connect to a benefit
+  ✗ No copy that would work with a competitor's name swapped in
+  ✗ No walls of text with zero line breaks
+  ✗ Never lead with "we" in the first line
+  ✗ No repeating the same text in primary text, headline, AND on-image —
+    each zone has a distinct job and must complement, not duplicate
+  ✗ No ALL CAPS sentences
+  ✗ No superlatives without proof ("world's greatest" = instant skip)
+  ✗ Never "Learn More", "Click Here", "Check It Out" as CTA
 
 ═══════════════════════════════════════════════════════════════
-STATIC CREATIVE DIRECTION FRAMEWORK
+PART 2 — STATIC CREATIVE DIRECTION FRAMEWORK
 ═══════════════════════════════════════════════════════════════
 
 FORMAT TYPES — assign exactly one per variation:
@@ -442,7 +573,7 @@ FORMAT TYPES — assign exactly one per variation:
                           Best for: Pain Point angle (urgent, confrontational)
   • Testimonial Card    — customer quote + star rating + product
                           Best for: Social Proof angle
-  • Before/After        — visual transformation (do NOT use the words Before/After)
+  • Before/After        — visual transformation (do NOT label "Before" or "After")
                           Best for: Pain Point or Aspiration angle
   • Problem-Agitate-Solution — pain imagery → intensified → product as relief
                           Best for: Pain Point angle
@@ -452,50 +583,51 @@ FORMAT TYPES — assign exactly one per variation:
                           Best for: Aspiration angle (premium feel)
 
 VISUAL HIERARCHY — describe placement following this attention sequence:
-  1st eye → Product or hero image (largest element, 30-40% of frame)
-  2nd eye → Value proposition / hook (bold, 6-8 words max, on-image)
+  1st eye → Product or hero image (largest element, 30–40% of frame)
+  2nd eye → Value proposition / hook (bold, 6–8 words max, on-image)
   3rd eye → Social proof (stars, review count, press badge, result claim)
-  4th eye → CTA (specific action verb — "Shop the Set", not "Learn More")
+  4th eye → CTA (specific action verb — "Shop the Set", never "Learn More")
 
 COMPOSITION RULES:
-  • Aspect ratio: 4:5 vertical (1080×1350px) — default for Feed
-    Use 1:1 (1080×1080px) for Stories or square placements
-  • Maintain 30-40% white/negative space
+  • Aspect ratio: 4:5 vertical (1080×1350px) default for Feed;
+    1:1 (1080×1080px) for Stories
+  • Maintain 30–40% white/negative space
   • Maximum 3 focal points (3-Element Rule)
   • Product is the unmistakable hero
   • Text never covers the product
   • High-contrast text for mobile readability
   • Price visible if it qualifies intent — readable, not dominant
+  • On-image text: 6–8 words MAX (less text = better delivery algorithm score)
+  • On-image text and primary text must NOT repeat the same words — they
+    complement each other
 
 ON-IMAGE COPY RULES:
-  creative_headline: 6-8 words, product-led hook, not a generic slogan
+  creative_headline: 6–8 words, product-led, punchy, not a generic slogan
     Examples: "Finally shoes that don't destroy your knees"
-              "The last pillow you'll ever need to buy"
-  creative_subtext: one line of supporting proof or benefit (optional but preferred)
-  creative_cta: specific action verb phrase — "Get Yours", "Try It Risk-Free",
-    "Shop the Set", "Grab Yours Today" (NOT just "Learn More")
+              "The last pillow you'll ever buy"
+  creative_subtext: one line of supporting proof or benefit (preferred, not required)
+  creative_cta: specific action — "Get Yours", "Try It Risk-Free", "Shop the Set"
+    (NEVER "Learn More", "Check It Out", "Click Here")
   trust_element — include exactly one:
-    • Star rating + review count: "4.8★ from 3,200+ reviews"
+    • Star rating + volume: "4.8★ from 3,200+ reviews"
     • Press credibility: "As Seen In Forbes · NYT · Vogue"
-    • Customer result claim: "Results in 14 days — or your money back"
-    • Third-party badge: "Trustpilot Excellent · 10,000+ reviews"
-    • Specific outcome stat: "9 out of 10 customers reorder"
+    • Result claim: "Results in 14 days — or your money back"
+    • Third-party: "Trustpilot Excellent · 10,000+ reviews"
+    • Outcome stat: "9 out of 10 customers reorder"
 
 COLOR & STYLE DIRECTION per angle:
-  Pain Point   → Bold & Urgent: dark or high-contrast background, sharp typography,
+  Pain Point   → Bold & Urgent: dark/high-contrast background, sharp typography,
                  accent colour that pops against the Meta feed
   Aspiration   → Premium / Editorial: warm neutrals or brand colour, refined
                  sans-serif, generous white space
-  Social Proof → Clean & Warm: light background, friendly photography vibe,
-                 social-community feel; avoid pure white if Meta feed is white
+  Social Proof → Clean & Warm: light background, friendly community photography,
+                 avoid pure white if the Meta feed is white
 
-visual_description: write 3-5 sentences describing the complete layout as if
-  briefing a designer — what element is where, what size, what colour, what
-  text appears on the canvas, and what the overall visual feel is.
+visual_description: 3–5 sentences briefing a designer — what element is where,
+  what size, what colour, what text appears on canvas, overall visual feel.
 
-visual_style: one concise sentence: background colour/texture, typography style,
-  overall aesthetic label (e.g. "Dark charcoal gradient, bold white Helvetica
-  headline, Premium/Urgent feel").
+visual_style: one sentence: background, typography style, aesthetic label.
+  Example: "Dark charcoal gradient, bold white Helvetica hook, Urgent/Premium feel"
 ═══════════════════════════════════════════════════════════════
 
 Return ONLY valid JSON — no prose, no markdown, no explanation.
@@ -518,24 +650,29 @@ Using BOTH the copywriting constitution AND the static creative direction
 framework, write exactly 3 Meta ad variations. Each variation must produce
 complete copy fields AND a complete static creative brief.
 
-For the creative brief, choose the most appropriate format_type for each angle,
-write a full visual_description (3-5 sentences briefing a designer), and
-provide all on-image copy fields. Ensure the creative brief is specific enough
-that a designer could execute it without further clarification.
-
-If an offer is provided, incorporate it into the Aspiration or Social Proof
-variation's creative direction. If a landing page URL is provided, note in
-visual_description how the ad's visual promise should match the landing page.
+Rules for this run:
+- Each variation must use a DIFFERENT hook formula (Pain-Point Question, Bold
+  Outcome, Specific Proof, Curiosity Gap, Us vs. Them, or Social Proof Lead)
+- Each variation must use the most appropriate framework (PAS, BAB, AIDA, FAB,
+  or Value Stack) — do not default to PAS for all three
+- headline: target ≤27 chars (hard max 40). Short and punchy wins.
+- cta: choose from the approved strong CTA list — NEVER use "Learn More"
+- For the creative brief: choose the most appropriate format_type, write a full
+  visual_description (3–5 sentences), and complete all on-image copy fields
+- On-image copy and primary text must use DIFFERENT words — each zone has a
+  distinct job
+- If an offer is provided, incorporate urgency into at least one variation
+- If a landing page URL is provided, note visual continuity in visual_description
 
 Return this exact JSON structure:
 [
   {{
     "angle": "Pain Point",
-    "framework": "PAS",
+    "framework": "PAS or FAB or AIDA — whichever fits best",
     "primary_text": "...",
-    "headline": "...",
-    "description": "...",
-    "cta": "...",
+    "headline": "...(≤27 chars target)...",
+    "description": "...(≤30 chars)...",
+    "cta": "...(strong CTA — not Learn More)...",
     "audience_note": "...",
     "format_type": "...",
     "visual_description": "...",
@@ -547,11 +684,11 @@ Return this exact JSON structure:
   }},
   {{
     "angle": "Aspiration",
-    "framework": "BAB",
+    "framework": "BAB or AIDA or Value Stack — whichever fits best",
     "primary_text": "...",
-    "headline": "...",
-    "description": "...",
-    "cta": "...",
+    "headline": "...(≤27 chars target)...",
+    "description": "...(≤30 chars)...",
+    "cta": "...(strong CTA — not Learn More)...",
     "audience_note": "...",
     "format_type": "...",
     "visual_description": "...",
@@ -563,11 +700,11 @@ Return this exact JSON structure:
   }},
   {{
     "angle": "Social Proof",
-    "framework": "Social Proof + FOMO",
+    "framework": "Social Proof + FOMO or AIDA — whichever fits best",
     "primary_text": "...",
-    "headline": "...",
-    "description": "...",
-    "cta": "...",
+    "headline": "...(≤27 chars target)...",
+    "description": "...(≤30 chars)...",
+    "cta": "...(strong CTA — not Learn More)...",
     "audience_note": "...",
     "format_type": "...",
     "visual_description": "...",
@@ -590,6 +727,7 @@ def _step3_generate_ads(
     campaign_goal: str = "Conversions",
     offer: str = "",
     landing_page_url: str = "",
+    product_image_bytes: bytes | None = None,
 ) -> list[AdVariation]:
     user_prompt = _STEP3_USER_TMPL.format(
         product_intel=json.dumps(product_intel, indent=2),
@@ -610,7 +748,7 @@ def _step3_generate_ads(
         angle = item.get("angle", "")
         format_type = item.get("format_type", "")
         image_b64 = (
-            _generate_ad_image(model, product_intel, angle, format_type)
+            _generate_ad_image(model, product_intel, angle, format_type, product_image_bytes)
             if generate_images
             else None
         )
@@ -619,7 +757,7 @@ def _step3_generate_ads(
                 angle=angle,
                 framework=item.get("framework", ""),
                 primary_text=item.get("primary_text", ""),
-                headline=item.get("headline", "")[:40],
+                headline=item.get("headline", "")[:40],  # hard max 40; target ≤27
                 description=item.get("description", "")[:30],
                 cta=item.get("cta", "Learn More"),
                 audience_note=item.get("audience_note", ""),
