@@ -173,15 +173,86 @@ def scrape_product_page(url: str) -> str:
     return content[:12_000]
 
 
+def _is_svg_url(href: str) -> bool:
+    u = href.lower().split("?")[0]
+    return u.endswith(".svg") or u.endswith(".svgz")
+
+
+def _is_likely_non_product_image(href: str, alt: str = "") -> bool:
+    """True if URL/alt look like a brand mark, icon, or tiny asset — not the PDP hero."""
+    u = href.lower()
+    a = (alt or "").lower()
+    if _is_svg_url(href):
+        return True
+    # Path / filename signals (avoid matching unrelated words: use path segments)
+    bad_fragments = (
+        "logo", "wordmark", "swoosh", "brand-mark", "brandmark", "/icons/", "/icon/",
+        "favicon", "sprite", "placeholder", "pixel", "apple-touch", "badge",
+        "/branding/", "/brand-", "-logo", "logo.", "/logos/", "og-image-brand",
+        "social-share", "share-image-brand",
+    )
+    for frag in bad_fragments:
+        if frag in u:
+            return True
+    bad_alt = ("logo", "brand logo", "icon", "wordmark", "badge")
+    for b in bad_alt:
+        if b in a and len(a) < 80:
+            return True
+    return False
+
+
+def _img_intrinsic_area(img_tag) -> int:
+    try:
+        w = int(img_tag.get("width", 0) or 0)
+        h = int(img_tag.get("height", 0) or 0)
+        if w >= 200 and h >= 200:
+            return w * h
+    except (ValueError, TypeError):
+        pass
+    # Unknown dimensions — neutral area so URL heuristics still compete
+    return 10_000
+
+
+def _gallery_parent_bonus(img_tag) -> float:
+    """Boost score when the <img> sits inside typical product / gallery markup."""
+    bonus = 0.0
+    p = img_tag.parent
+    for _ in range(8):
+        if p is None or not getattr(p, "name", None):
+            break
+        cls = " ".join(p.get("class") or []).lower()
+        pid = (p.get("id") or "").lower()
+        role = (p.get("role") or "").lower()
+        blob = f"{cls} {pid} {role}"
+        if p.get("itemprop") == "image":
+            bonus = max(bonus, 45.0)
+        if any(
+            k in blob
+            for k in (
+                "product",
+                "gallery",
+                "pdp",
+                "media-gallery",
+                "product-media",
+                "product__",
+                "featured-image",
+                "image-zoom",
+            )
+        ):
+            bonus = max(bonus, 28.0)
+        if p.name == "main":
+            bonus = max(bonus, 12.0)
+        p = p.parent
+    return bonus
+
+
 def extract_product_image_url(url: str) -> str | None:
     """
-    Fetch a product page and return the best candidate product image URL.
+    Fetch a product page and return the best candidate **product hero** image URL.
 
-    Priority order:
-    1. <meta property="og:image"> — most reliable across e-commerce sites
-    2. <meta name="twitter:image">
-    3. First "image" key in schema.org Product JSON-LD
-    4. Largest <img> whose src path contains a product-signal keyword
+    Does **not** return the first og:image blindly (often a brand/social image).
+    Scores candidates: JSON-LD Product images and gallery <img> tags win over og/twitter
+    when the latter look like logos or lack product context.
     """
     import json as _json
 
@@ -193,77 +264,110 @@ def extract_product_image_url(url: str) -> str | None:
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # 1. og:image
-    og = soup.find("meta", property="og:image")
-    if og and og.get("content"):
-        return _normalize_url(og["content"], url) or og["content"]
+    best_score: dict[str, float] = {}
 
-    # 2. twitter:image
-    tw = soup.find("meta", attrs={"name": "twitter:image"})
-    if not tw:
-        tw = soup.find("meta", property="twitter:image")
-    if tw and tw.get("content"):
-        return _normalize_url(tw["content"], url) or tw["content"]
+    def add(u: str | None, score: float) -> None:
+        if not u:
+            return
+        nu = _normalize_url(u, url) or u
+        if not nu or _is_likely_non_product_image(nu, ""):
+            return
+        best_score[nu] = max(best_score.get(nu, 0.0), score)
 
-    # 3. schema.org Product JSON-LD
+    # --- schema.org Product JSON-LD (highest trust for PDP) ---
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = _json.loads(script.string or "")
-            # data can be a list or a dict
-            items = data if isinstance(data, list) else [data]
-            for item in items:
-                # Handle @graph wrapper
+            stack: list = data if isinstance(data, list) else [data]
+            expanded: list = []
+            for item in stack:
                 if isinstance(item, dict) and "@graph" in item:
-                    items = item["@graph"]
-                    break
-            for item in items:
+                    expanded.extend(item["@graph"] if isinstance(item["@graph"], list) else [item["@graph"]])
+                else:
+                    expanded.append(item)
+            for item in expanded:
                 if not isinstance(item, dict):
                     continue
                 types = item.get("@type", "")
                 if isinstance(types, str):
-                    types = [types]
-                if "Product" in types:
-                    img = item.get("image")
-                    if isinstance(img, str) and img:
-                        return _normalize_url(img, url) or img
-                    if isinstance(img, list) and img:
-                        candidate = img[0] if isinstance(img[0], str) else img[0].get("url", "")
-                        if candidate:
-                            return _normalize_url(candidate, url) or candidate
-                    if isinstance(img, dict):
-                        candidate = img.get("url", "")
-                        if candidate:
-                            return _normalize_url(candidate, url) or candidate
+                    type_list = [types]
+                elif isinstance(types, list):
+                    type_list = [str(x) for x in types]
+                else:
+                    type_list = []
+                if not any("Product" in t for t in type_list):
+                    continue
+                img = item.get("image")
+                imgs: list = []
+                if isinstance(img, str) and img:
+                    imgs = [img]
+                elif isinstance(img, list):
+                    for el in img:
+                        if isinstance(el, str):
+                            imgs.append(el)
+                        elif isinstance(el, dict):
+                            uu = el.get("url") or el.get("contentUrl")
+                            if uu:
+                                imgs.append(uu)
+                elif isinstance(img, dict):
+                    uu = img.get("url") or img.get("contentUrl")
+                    if uu:
+                        imgs.append(uu)
+                for iu in imgs:
+                    if iu and not _is_likely_non_product_image(iu, ""):
+                        add(iu, 100.0)
         except Exception:
             continue
 
-    # 4. Largest <img> with a product-signal in its src
-    _PRODUCT_SIGNALS = ("product", "pdp", "/images/", "/img/", "/media/", "/photos/")
-    _SKIP_SIGNALS = ("logo", "icon", "sprite", "placeholder", "blank", "pixel")
-    best_url: str | None = None
-    best_area = 0
+    # --- <img itemprop="image"> (common on Shopify / structured PDPs) ---
+    for img_tag in soup.find_all("img", itemprop="image"):
+        src = img_tag.get("src") or img_tag.get("data-src") or img_tag.get("data-lazy-src") or ""
+        if not src or _is_likely_non_product_image(src, img_tag.get("alt") or ""):
+            continue
+        area = _img_intrinsic_area(img_tag)
+        add(src, 85.0 + min(area / 50_000.0, 30.0) + _gallery_parent_bonus(img_tag))
+
+    # --- Gallery / product section images ---
+    _PRODUCT_SIGNALS = ("product", "pdp", "/images/", "/img/", "/media/", "/photos/", "cdn", "assets")
+    _SKIP = ("logo", "icon", "sprite", "placeholder", "blank", "pixel", "wordmark", "swoosh")
     for img_tag in soup.find_all("img"):
         src = img_tag.get("src") or img_tag.get("data-src") or img_tag.get("data-lazy-src") or ""
         if not src:
             continue
-        src_lower = src.lower()
-        if any(s in src_lower for s in _SKIP_SIGNALS):
+        sl = src.lower()
+        if any(s in sl for s in _SKIP):
             continue
-        if not any(s in src_lower for s in _PRODUCT_SIGNALS):
+        if _is_likely_non_product_image(src, img_tag.get("alt") or ""):
             continue
-        try:
-            w = int(img_tag.get("width", 0) or 0)
-            h = int(img_tag.get("height", 0) or 0)
-            area = w * h
-        except (ValueError, TypeError):
-            area = 0
-        if area > best_area:
-            best_area = area
-            best_url = src
-    if best_url:
-        return _normalize_url(best_url, url) or best_url
+        if not any(s in sl for s in _PRODUCT_SIGNALS):
+            continue
+        w = int(img_tag.get("width", 0) or 0)
+        h = int(img_tag.get("height", 0) or 0)
+        if w and h and (w < 200 or h < 200):
+            continue
+        area = _img_intrinsic_area(img_tag)
+        base = 40.0 + min(area / 40_000.0, 35.0) + _gallery_parent_bonus(img_tag)
+        add(src, base)
 
-    return None
+    # --- og / twitter (lower priority; skip if logo-like) ---
+    og = soup.find("meta", property="og:image")
+    if og and og.get("content"):
+        c = og["content"]
+        if not _is_likely_non_product_image(c, ""):
+            add(c, 42.0)
+
+    tw = soup.find("meta", attrs={"name": "twitter:image"})
+    if not tw:
+        tw = soup.find("meta", property="twitter:image")
+    if tw and tw.get("content"):
+        c = tw["content"]
+        if not _is_likely_non_product_image(c, ""):
+            add(c, 40.0)
+
+    if not best_score:
+        return None
+
+    return max(best_score.items(), key=lambda kv: kv[1])[0]
 
 
 def fetch_brand_logo_url(brand_url: str) -> str | None:

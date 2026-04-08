@@ -12,7 +12,7 @@ import base64
 from ad_generator import (
     _download_image_bytes,
     _get_client,
-    _generate_ad_image,
+    _render_ad_creative,
     _step1_extract_product_intel,
     _step2_synthesise_voc,
     _step3_generate_ads,
@@ -99,17 +99,22 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
 
     st.write("// Extracting product image...")
     product_image_url = extract_product_image_url(product_url)
+    print(f"[pipeline] product_image_url={product_image_url!r}")
     if product_image_url:
         st.write("OK Product image found")
     else:
-        st.write("WARN Could not extract product image — using generated only")
+        st.write("WARN Could not extract product image — text-only creative preview")
     product_image_bytes = _download_image_bytes(product_image_url) if product_image_url else None
+    print(f"[pipeline] product_image_bytes len={len(product_image_bytes) if product_image_bytes else 0}")
     product_image_b64 = base64.b64encode(product_image_bytes).decode() if product_image_bytes else None
 
     st.write("// Searching for brand logo...")
     logo_url = fetch_brand_logo_url(request.brand_url)
+    print(f"[pipeline] logo_url={logo_url!r}")
+    logo_bytes: bytes | None = None
     if logo_url:
         logo_bytes = _download_image_bytes(logo_url)
+        print(f"[pipeline] logo_bytes len={len(logo_bytes) if logo_bytes else 0}")
         brand_logo_b64 = base64.b64encode(logo_bytes).decode() if logo_bytes else None
         if brand_logo_b64:
             st.write("OK Brand logo found")
@@ -117,6 +122,7 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
             st.write("WARN Brand logo URL found but could not download")
             brand_logo_b64 = None
     else:
+        print("[pipeline] logo_bytes len=0 (no logo_url)")
         st.write("WARN No brand logo found — using initials")
         brand_logo_b64 = None
 
@@ -151,25 +157,29 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
         campaign_goal=request.campaign_goal,
         offer=request.offer,
         landing_page_url=request.landing_page_url,
+        brand_name=brand_name,
     )
     st.write("OK Ad copy written")
 
-    st.write("// Generating ad creatives with Gemini Imagen...")
+    st.write("// Composing ad creatives...")
     images_ok = 0
     for variation in variations:
-        img = _generate_ad_image(
-            client, product_intel, variation.angle, variation.format_type,
+        # product_image_bytes = PDP photo; logo_bytes = brand mark (order verified, not swapped)
+        img = _render_ad_creative(
+            creative_spec=variation.creative_spec,
             product_image_bytes=product_image_bytes,
+            logo_bytes=logo_bytes,
+            product_image_url=product_image_url,
         )
         variation.image_b64 = img
         if img:
             images_ok += 1
     if images_ok == len(variations):
-        st.write(f"OK {images_ok} images generated")
+        st.write(f"OK {images_ok} creatives composed")
     elif images_ok > 0:
-        st.write(f"WARN {images_ok}/{len(variations)} images generated")
+        st.write(f"WARN {images_ok}/{len(variations)} creatives composed")
     else:
-        st.write("WARN Image generation unavailable — copy is ready")
+        st.write("WARN Could not compose images — copy is ready")
 
     if spinner_slot is not None:
         spinner_slot.empty()

@@ -18,7 +18,6 @@ Public entry point: generate_ads(request) -> AdOutput
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import os
@@ -26,6 +25,8 @@ import re
 
 from google import genai
 from google.genai import types as genai_types
+
+from renderer import compose, merge_creative_spec_defaults
 
 from models import (
     AdOutput,
@@ -38,7 +39,6 @@ from scraper import find_product_url, scrape_product_page
 from voc import gather_voc
 
 _MODEL = "gemini-2.5-flash"
-_IMAGE_MODEL = "imagen-4.0-generate-001"
 
 log = logging.getLogger(__name__)
 
@@ -213,109 +213,8 @@ def _step2_synthesise_voc(
 
 
 # ---------------------------------------------------------------------------
-# Image Generation — Imagen 3
+# Product image download (scraped asset for compositor)
 # ---------------------------------------------------------------------------
-
-def _build_image_prompt(product_intel: dict, angle: str, format_type: str = "") -> str:
-    name = product_intel.get("name", "product")
-    features = ", ".join(product_intel.get("key_features", [])[:3])
-    brand_voice = product_intel.get("brand_voice", "")
-    audience = product_intel.get("target_audience_signals", "")
-    visual_appearance = product_intel.get("visual_appearance", "")
-
-    feature_line = f" Key features: {features}." if features else ""
-    brand_line = f" Brand feel: {brand_voice}." if brand_voice else ""
-    audience_line = f" Target customer: {audience}." if audience else ""
-    # Anchor every prompt with a visual description so Imagen renders the actual product
-    product_ref = f"{name} ({visual_appearance})" if visual_appearance else name
-
-    # Format-type-specific overrides (take precedence over angle defaults)
-    if format_type == "Testimonial Card":
-        return (
-            f"Premium product photography for Meta/Instagram feed. "
-            f"The product is a {product_ref}.{feature_line}"
-            f" The {product_ref} is the clear hero, displayed on a clean off-white or warm neutral surface "
-            f"with soft studio lighting and gentle shadows. Product fills 60% of the frame, "
-            f"perfectly sharp with fine detail visible. Generous empty space above and below "
-            f"the product. Warm, trustworthy, community feel.{brand_line}"
-            f" No people. No text. No logos. Square 1:1 format."
-        )
-    elif format_type == "Flat Lay":
-        return (
-            f"Editorial flat-lay product photograph for Meta/Instagram ad. "
-            f"The product is a {product_ref}.{feature_line}"
-            f" Top-down overhead shot: the {product_ref} arranged elegantly with 2-3 complementary props "
-            f"(neutral lifestyle objects that match the brand aesthetic) on a textured surface "
-            f"(linen, marble, or natural wood). Warm, even studio lighting. "
-            f"Looks like a high-end editorial magazine spread.{brand_line}"
-            f" No text overlays. No logos. Square 1:1 format."
-        )
-    elif format_type in ("Bold Text Overlay", "Problem-Agitate-Solution"):
-        return (
-            f"High-contrast Meta/Instagram feed ad. The product is a {product_ref}.{feature_line}"
-            f" The {product_ref} is positioned dramatically — left or right third of frame — "
-            f"against a deep dark background (charcoal, navy, or near-black) with a single "
-            f"powerful directional light source creating strong shadows and highlights on the product. "
-            f"Leaves significant clear space (right or left half) for bold text overlay. "
-            f"Photorealistic, high drama, premium commercial quality.{brand_line}"
-            f" No text. No logos. Square 1:1 format."
-        )
-    elif format_type == "Before/After":
-        return (
-            f"Transformation Meta/Instagram ad. The product is a {product_ref}.{feature_line}"
-            f" Split composition: left half shows a muted, desaturated lifestyle scene "
-            f"representing struggle or the 'before' state; right half shows the same scene "
-            f"bright, vibrant, and joyful representing the transformed outcome. "
-            f"The {product_ref} is featured prominently and clearly visible in the right (after) half. "
-            f"No before/after labels. Photorealistic.{brand_line}{audience_line}"
-            f" No text overlays. No logos. Square 1:1 format."
-        )
-    elif format_type == "Offer/Promo":
-        return (
-            f"High-energy Meta/Instagram promotional ad. The product is a {product_ref}.{feature_line}"
-            f" The {product_ref} is the hero, centred against a bold brand-coloured background "
-            f"with a clean gradient or solid fill. Bright, energetic studio lighting. "
-            f"Product fills 60% of the frame. Leaves clear space at top and bottom for "
-            f"price/offer text overlays. Optimistic, urgent feel.{brand_line}"
-            f" No text. No logos. Square 1:1 format."
-        )
-
-    # Angle-based fallbacks (Product Hero is also the Pain Point default)
-    if angle == "Pain Point":
-        return (
-            f"High-impact Meta/Instagram feed ad. The product is a {product_ref}.{feature_line}"
-            f" Hero product shot: the {product_ref} isolated on a clean gradient background "
-            f"(light grey to white), dramatic studio rim lighting from the side and above "
-            f"that reveals every texture and contour of the product. "
-            f"The product fills 70% of the frame. Extremely sharp focus. "
-            f"Subtle drop shadow grounds the product. "
-            f"Photorealistic, ultra high detail, premium commercial advertising photography quality."
-            f"{brand_line} No people. No text. No logos. Square 1:1 format."
-        )
-    elif angle == "Aspiration":
-        return (
-            f"Aspirational Meta/Instagram lifestyle ad. The product is a {product_ref}.{feature_line}"
-            f" The {product_ref} is shown in active use in a beautiful real-world setting — "
-            f"outdoors in golden-hour afternoon light, warm amber and orange tones."
-            f" A person's lower body (feet, legs) is shown actively using the {product_ref}; "
-            f"the product must be clearly visible and identifiable in the frame. Dynamic, in-motion feel."
-            f" Shallow depth of field, bokeh background. "
-            f"Looks like a premium editorial shoot for a major brand campaign."
-            f"{brand_line}{audience_line}"
-            f" No text overlays. No logos. Square 1:1 format."
-        )
-    else:  # Social Proof
-        return (
-            f"Authentic lifestyle Meta/Instagram ad. The product is a {product_ref}.{feature_line}"
-            f" Candid, real-world moment — a person actively using the {product_ref} in an everyday "
-            f"relatable setting. The {product_ref} must be clearly visible and identifiable in the frame. "
-            f"Natural indoor or outdoor light, feels warm and genuine."
-            f" The person's face may be shown — warm, happy, friendly expression."
-            f" Community vibe, feels like a real customer photo but shot professionally."
-            f"{brand_line}{audience_line}"
-            f" No text overlays. No logos. Square 1:1 format."
-        )
-
 
 def _download_image_bytes(url: str) -> bytes | None:
     """Download an image from a URL and return raw bytes, or None on failure."""
@@ -330,60 +229,54 @@ def _download_image_bytes(url: str) -> bytes | None:
         return None
 
 
-def _generate_ad_image(
-    client: genai.Client,
-    product_intel: dict,
-    angle: str,
-    format_type: str = "",
-    product_image_bytes: bytes | None = None,
-) -> str | None:
-    """
-    Calls Imagen to generate a product image for the given ad angle.
-    When product_image_bytes is provided, attempts a subject-reference call first
-    so Imagen anchors the creative to the real product; falls back to text-only.
-    Returns a base64-encoded JPEG string, or None if generation fails.
-    """
-    prompt = _build_image_prompt(product_intel, angle, format_type)
-    img_config = genai_types.GenerateImagesConfig(
-        number_of_images=1,
-        aspect_ratio="1:1",
-        output_mime_type="image/jpeg",
-        person_generation="ALLOW_ADULT",
-    )
-
-    # Attempt reference-image call when we have the real product photo
-    if product_image_bytes:
+def _parse_creative_spec_field(raw: object) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
         try:
-            ref_image = genai_types.ReferenceImage(
-                reference_type="SUBJECT",
-                reference_image=genai_types.Image(image_bytes=product_image_bytes),
-            )
-            response = client.models.generate_images(
-                model=_IMAGE_MODEL,
-                prompt=prompt,
-                reference_images=[ref_image],
-                config=img_config,
-            )
-            if response.generated_images:
-                raw = response.generated_images[0].image.image_bytes
-                return base64.b64encode(raw).decode("utf-8")
-            log.warning("Reference-image call returned 0 images for angle '%s'; falling back", angle)
-        except Exception as exc:
-            log.warning("Reference-image call failed for angle '%s': %s — falling back to text-only", angle, exc)
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            log.warning("creative_spec string was not valid JSON")
+    return {}
 
-    # Text-only fallback (also the primary path when no product image is available)
+
+def _render_ad_creative(
+    creative_spec: dict,
+    product_image_bytes: bytes | None,
+    logo_bytes: bytes | None,
+    *,
+    product_image_url: str | None = None,
+) -> str | None:
+    """Compose a final ad image from the creative spec and scraped product image."""
+    if not product_image_bytes:
+        return None
     try:
-        response = client.models.generate_images(
-            model=_IMAGE_MODEL,
-            prompt=prompt,
-            config=img_config,
+        from io import BytesIO
+
+        from PIL import Image
+
+        _im = Image.open(BytesIO(product_image_bytes))
+        _dims = _im.size
+    except Exception:
+        _dims = None
+    print(
+        f"[ad_generator] _render_ad_creative product_image_url={product_image_url!r} "
+        f"product_bytes_len={len(product_image_bytes)} logo_bytes_len={len(logo_bytes or b'')}"
+    )
+    print(f"[ad_generator] product_image dimensions before compose: {_dims}")
+    try:
+        return compose(
+            spec=creative_spec,
+            product_image=product_image_bytes,
+            logo_image=logo_bytes,
         )
-        if response.generated_images:
-            raw = response.generated_images[0].image.image_bytes
-            return base64.b64encode(raw).decode("utf-8")
+    except ValueError as exc:
+        log.warning("Ad composition skipped: %s", exc)
+        return None
     except Exception as exc:
-        log.warning("Image generation failed for angle '%s': %s", angle, exc)
-    return None
+        log.warning("Ad composition failed: %s", exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -395,8 +288,8 @@ You are one of the world's best direct-response copywriters AND a senior
 performance creative strategist specialising in high-converting static Meta
 (Facebook / Instagram) ads for cold prospecting audiences.
 
-You follow every rule in the copywriting constitution and static creative
-direction framework below without exception.
+You follow every rule in the copywriting constitution (Part 1) and output a
+structured creative_spec JSON object (Part 2) for each variation without exception.
 
 ═══════════════════════════════════════════════════════════════
 PART 1 — COPYWRITING CONSTITUTION
@@ -563,71 +456,149 @@ Violating any of these will produce a bad ad. Check every variation:
   ✗ Never "Learn More", "Click Here", "Check It Out" as CTA
 
 ═══════════════════════════════════════════════════════════════
-PART 2 — STATIC CREATIVE DIRECTION FRAMEWORK
+PART 2 — CREATIVE SPEC (JSON FOR DETERMINISTIC LAYOUT RENDERER)
 ═══════════════════════════════════════════════════════════════
 
-FORMAT TYPES — assign exactly one per variation:
-  • Product Hero        — clean product shot, branded background, minimal text
-                          Best for: Pain Point angle (sharp, direct)
-  • Bold Text Overlay   — large hook text over lifestyle/product image
-                          Best for: Pain Point angle (urgent, confrontational)
-  • Testimonial Card    — customer quote + star rating + product
-                          Best for: Social Proof angle
-  • Before/After        — visual transformation (do NOT label "Before" or "After")
-                          Best for: Pain Point or Aspiration angle
-  • Problem-Agitate-Solution — pain imagery → intensified → product as relief
-                          Best for: Pain Point angle
-  • Offer/Promo         — discount + product + urgency element
-                          Use only if a genuine offer is provided
-  • Flat Lay            — styled editorial arrangement of product + accessories
-                          Best for: Aspiration angle (premium feel)
+The product photograph is supplied separately by the pipeline — you NEVER
+describe or prompt generative image models for the product. Your job is ONLY to
+output layout, colours, typography sizes, and text that will be composited ON
+TOP of the real product image.
 
-VISUAL HIERARCHY — describe placement following this attention sequence:
-  1st eye → Product or hero image (largest element, 30–40% of frame)
-  2nd eye → Value proposition / hook (bold, 6–8 words max, on-image)
-  3rd eye → Social proof (stars, review count, press badge, result claim)
-  4th eye → CTA (specific action verb — "Shop the Set", never "Learn More")
+Each variation MUST include a complete "creative_spec" object with this shape:
 
-COMPOSITION RULES:
-  • Aspect ratio: 4:5 vertical (1080×1350px) default for Feed;
-    1:1 (1080×1080px) for Stories
-  • Maintain 30–40% white/negative space
-  • Maximum 3 focal points (3-Element Rule)
-  • Product is the unmistakable hero
-  • Text never covers the product
-  • High-contrast text for mobile readability
-  • Price visible if it qualifies intent — readable, not dominant
-  • On-image text: 6–8 words MAX (less text = better delivery algorithm score)
-  • On-image text and primary text must NOT repeat the same words — they
-    complement each other
+  canvas: { width: 1080, height: 1350, aspect_ratio: "4:5" }
 
-ON-IMAGE COPY RULES:
-  creative_headline: 6–8 words, product-led, punchy, not a generic slogan
-    Examples: "Finally shoes that don't destroy your knees"
-              "The last pillow you'll ever buy"
-  creative_subtext: one line of supporting proof or benefit (preferred, not required)
-  creative_cta: specific action — "Get Yours", "Try It Risk-Free", "Shop the Set"
-    (NEVER "Learn More", "Check It Out", "Click Here")
-  trust_element — include exactly one:
-    • Star rating + volume: "4.8★ from 3,200+ reviews"
-    • Press credibility: "As Seen In Forbes · NYT · Vogue"
-    • Result claim: "Results in 14 days — or your money back"
-    • Third-party: "Trustpilot Excellent · 10,000+ reviews"
-    • Outcome stat: "9 out of 10 customers reorder"
+  background.mode — one of:
+    • "solid"     → value: { "color": "#F5F5F0" }  (hex or rgba only)
+    • "gradient"  → value: { "type": "linear"|"radial", "angle_deg": number (linear only),
+          "stops": [{"position": 0.0, "color": "#..."}, {"position": 1.0, "color": "#..."}] }
+    • "blur"      → value: { "radius": 40, "tint": "rgba(0,0,0,0.3)" }  (blurred product as bg)
+    • "ai_generated" — NOT SUPPORTED YET; do not use (use gradient or solid instead)
 
-COLOR & STYLE DIRECTION per angle:
-  Pain Point   → Bold & Urgent: dark/high-contrast background, sharp typography,
-                 accent colour that pops against the Meta feed
-  Aspiration   → Premium / Editorial: warm neutrals or brand colour, refined
-                 sans-serif, generous white space
-  Social Proof → Clean & Warm: light background, friendly community photography,
-                 avoid pure white if the Meta feed is white
+  product_zone:
+    anchor: "center"
+    y_offset_pct: number (-15 to 15) — vertical nudge as % of canvas height
+    max_width_pct, max_height_pct: 40–60 (product should occupy ~40–60% of canvas area)
+    crop_mode: "contain" | "cover" | "original"
+    shadow: { "enabled": true/false, "offset_y": number, "blur": number, "color": "rgba(...)" }
 
-visual_description: 3–5 sentences briefing a designer — what element is where,
-  what size, what colour, what text appears on canvas, overall visual feel.
+  text_zones — array of 2–4 objects, max 4. Each MUST have:
+    id: "headline" | "subtext" | "cta" | "trust"
+    content: string (for headline/subtext/trust use on-image copy; cta = button label only)
+    font_weight: "bold" | "normal" | "medium"
+    font_size_px: integer 16–64
+    color: hex or rgba
+    anchor: one of
+      "top-center", "top-left", "top-right",
+      "bottom-center", "bottom-left", "bottom-right",
+      "below-headline", "below-subtext", "above-cta"
+    y_offset_pct: 0–25 (extra offset as % of canvas height after anchor)
+    max_width_pct: 20–95
+    alignment: "center" | "left" | "right" (for multi-line text)
+    For id "cta" ONLY, also set:
+      background_color (hex/rgba), corner_radius (number), padding: [top, right, bottom, left]
 
-visual_style: one sentence: background, typography style, aesthetic label.
-  Example: "Dark charcoal gradient, bold white Helvetica hook, Urgent/Premium feel"
+  brand_badge:
+    position: "top-left" | "top-right"
+    margin_px: number
+    use_logo: true/false (pipeline pastes logo when true)
+    fallback_text: SHORT BRAND NAME if no logo
+    max_height_px: number
+
+  style:
+    font_family: "sans-serif-bold" | "sans-serif" (informational)
+    mood: short label
+    dominant_color, accent_color: hex (for CTA tinting; must contrast with background)
+
+PLACEMENT RULES:
+  • Choose background by angle: Pain Point → dark gradient + high contrast;
+    Aspiration → warm light gradient OR "blur"; Social Proof → solid clean light.
+  • Text zones MUST stay in top OR bottom bands — never overlap the central product.
+    Put headline + subtext top; trust + cta bottom (trust above-cta).
+  • creative_headline / creative_subtext / creative_cta / trust_element in the top-level
+    JSON MUST match the "content" strings in text_zones (same wording).
+  • Colours: only #RRGGBB or rgba(...). No named colours.
+  • Do NOT output visual_description or visual_style (deprecated).
+
+EXAMPLE creative_spec (Pain Point — structure reference only):
+{
+  "canvas": {"width": 1080, "height": 1350, "aspect_ratio": "4:5"},
+  "background": {
+    "mode": "gradient",
+    "value": {
+      "type": "linear",
+      "angle_deg": 160,
+      "stops": [
+        {"position": 0.0, "color": "#1a1a2e"},
+        {"position": 1.0, "color": "#16213e"}
+      ]
+    }
+  },
+  "product_zone": {
+    "anchor": "center",
+    "y_offset_pct": 5,
+    "max_width_pct": 62,
+    "max_height_pct": 48,
+    "crop_mode": "contain",
+    "shadow": {"enabled": true, "offset_y": 12, "blur": 28, "color": "rgba(0,0,0,0.35)"}
+  },
+  "text_zones": [
+    {"id": "headline", "content": "Finally shoes that do not destroy your knees",
+      "font_weight": "bold", "font_size_px": 50, "color": "#FFFFFF",
+      "anchor": "top-center", "y_offset_pct": 6, "max_width_pct": 85, "alignment": "center"},
+    {"id": "subtext", "content": "Orthopedic-grade support meets all-day comfort",
+      "font_weight": "normal", "font_size_px": 24, "color": "rgba(255,255,255,0.78)",
+      "anchor": "below-headline", "y_offset_pct": 2, "max_width_pct": 78, "alignment": "center"},
+    {"id": "cta", "content": "Shop Now", "font_weight": "bold", "font_size_px": 22, "color": "#FFFFFF",
+      "background_color": "#E63946", "corner_radius": 8, "padding": [12, 32, 12, 32],
+      "anchor": "bottom-center", "y_offset_pct": 8},
+    {"id": "trust", "content": "4.8★ from 3,200+ reviews", "font_weight": "normal",
+      "font_size_px": 18, "color": "rgba(255,255,255,0.62)", "anchor": "above-cta",
+      "y_offset_pct": 2, "max_width_pct": 80, "alignment": "center"}
+  ],
+  "brand_badge": {
+    "position": "top-left", "margin_px": 24, "use_logo": true,
+    "fallback_text": "BRAND", "max_height_px": 36
+  },
+  "style": {
+    "font_family": "sans-serif-bold",
+    "mood": "urgent-premium",
+    "dominant_color": "#1a1a2e",
+    "accent_color": "#E63946"
+  }
+}
+
+EXAMPLE creative_spec (Social Proof — solid light background):
+{
+  "canvas": {"width": 1080, "height": 1350, "aspect_ratio": "4:5"},
+  "background": {"mode": "solid", "value": {"color": "#F4F1EA"}},
+  "product_zone": {
+    "anchor": "center", "y_offset_pct": 4, "max_width_pct": 58, "max_height_pct": 50,
+    "crop_mode": "contain",
+    "shadow": {"enabled": true, "offset_y": 10, "blur": 22, "color": "rgba(0,0,0,0.2)"}
+  },
+  "text_zones": [
+    {"id": "headline", "content": "Rated by thousands of happy customers",
+      "font_weight": "bold", "font_size_px": 44, "color": "#1a1a1a",
+      "anchor": "top-center", "y_offset_pct": 7, "max_width_pct": 88, "alignment": "center"},
+    {"id": "cta", "content": "Get Yours", "font_weight": "bold", "font_size_px": 22,
+      "color": "#FFFFFF", "background_color": "#2A9D8F", "corner_radius": 8,
+      "padding": [12, 36, 12, 36], "anchor": "bottom-center", "y_offset_pct": 9},
+    {"id": "trust", "content": "4.9★ average · 8,400+ verified reviews",
+      "font_weight": "normal", "font_size_px": 18, "color": "rgba(26,26,26,0.65)",
+      "anchor": "above-cta", "y_offset_pct": 2, "max_width_pct": 85, "alignment": "center"}
+  ],
+  "brand_badge": {
+    "position": "top-left", "margin_px": 24, "use_logo": true,
+    "fallback_text": "BRAND", "max_height_px": 34
+  },
+  "style": {
+    "font_family": "sans-serif",
+    "mood": "trust-clean",
+    "dominant_color": "#F4F1EA",
+    "accent_color": "#2A9D8F"
+  }
+}
 ═══════════════════════════════════════════════════════════════
 
 Return ONLY valid JSON — no prose, no markdown, no explanation.
@@ -646,9 +617,8 @@ CAMPAIGN CONTEXT:
 - Offer (if any): {offer}
 - Landing Page URL (if provided): {landing_page_url}
 
-Using BOTH the copywriting constitution AND the static creative direction
-framework, write exactly 3 Meta ad variations. Each variation must produce
-complete copy fields AND a complete static creative brief.
+Using the copywriting constitution (Part 1) AND a full creative_spec (Part 2)
+for each variation, write exactly 3 Meta ad variations.
 
 Rules for this run:
 - Each variation must use a DIFFERENT hook formula (Pain-Point Question, Bold
@@ -657,14 +627,15 @@ Rules for this run:
   or Value Stack) — do not default to PAS for all three
 - headline: target ≤27 chars (hard max 40). Short and punchy wins.
 - cta: choose from the approved strong CTA list — NEVER use "Learn More"
-- For the creative brief: choose the most appropriate format_type, write a full
-  visual_description (3–5 sentences), and complete all on-image copy fields
-- On-image copy and primary text must use DIFFERENT words — each zone has a
-  distinct job
+- format_type: pick one label (Product Hero, Bold Text Overlay, Testimonial Card,
+  Before/After, Problem-Agitate-Solution, Offer/Promo, Flat Lay) for your records
+- creative_headline, creative_subtext, creative_cta, trust_element MUST match the
+  corresponding text_zones[].content strings inside creative_spec (identical text)
+- On-image copy and primary_text must use DIFFERENT words — each zone has a distinct job
 - If an offer is provided, incorporate urgency into at least one variation
-- If a landing page URL is provided, note visual continuity in visual_description
+- Omit visual_description and visual_style (deprecated)
 
-Return this exact JSON structure:
+Return this exact JSON structure (array of 3 objects):
 [
   {{
     "angle": "Pain Point",
@@ -674,13 +645,12 @@ Return this exact JSON structure:
     "description": "...(≤30 chars)...",
     "cta": "...(strong CTA — not Learn More)...",
     "audience_note": "...",
-    "format_type": "...",
-    "visual_description": "...",
+    "format_type": "Product Hero",
     "creative_headline": "...",
     "creative_subtext": "...",
     "creative_cta": "...",
     "trust_element": "...",
-    "visual_style": "..."
+    "creative_spec": {{ ... full object per Part 2 — required ... }}
   }},
   {{
     "angle": "Aspiration",
@@ -690,13 +660,12 @@ Return this exact JSON structure:
     "description": "...(≤30 chars)...",
     "cta": "...(strong CTA — not Learn More)...",
     "audience_note": "...",
-    "format_type": "...",
-    "visual_description": "...",
+    "format_type": "Flat Lay",
     "creative_headline": "...",
     "creative_subtext": "...",
     "creative_cta": "...",
     "trust_element": "...",
-    "visual_style": "..."
+    "creative_spec": {{ ... }}
   }},
   {{
     "angle": "Social Proof",
@@ -706,13 +675,12 @@ Return this exact JSON structure:
     "description": "...(≤30 chars)...",
     "cta": "...(strong CTA — not Learn More)...",
     "audience_note": "...",
-    "format_type": "...",
-    "visual_description": "...",
+    "format_type": "Testimonial Card",
     "creative_headline": "...",
     "creative_subtext": "...",
     "creative_cta": "...",
     "trust_element": "...",
-    "visual_style": "..."
+    "creative_spec": {{ ... }}
   }}
 ]
 """.strip()
@@ -728,6 +696,8 @@ def _step3_generate_ads(
     offer: str = "",
     landing_page_url: str = "",
     product_image_bytes: bytes | None = None,
+    logo_bytes: bytes | None = None,
+    brand_name: str = "",
 ) -> list[AdVariation]:
     user_prompt = _STEP3_USER_TMPL.format(
         product_intel=json.dumps(product_intel, indent=2),
@@ -747,11 +717,16 @@ def _step3_generate_ads(
     for item in data:
         angle = item.get("angle", "")
         format_type = item.get("format_type", "")
-        image_b64 = (
-            _generate_ad_image(model, product_intel, angle, format_type, product_image_bytes)
-            if generate_images
-            else None
-        )
+        raw_spec = _parse_creative_spec_field(item.get("creative_spec"))
+        creative_spec = merge_creative_spec_defaults(raw_spec, brand_name, item)
+        image_b64: str | None = None
+        if generate_images and product_image_bytes:
+            image_b64 = _render_ad_creative(
+                creative_spec,
+                product_image_bytes,
+                logo_bytes,
+                product_image_url=None,
+            )
         variations.append(
             AdVariation(
                 angle=angle,
@@ -762,6 +737,7 @@ def _step3_generate_ads(
                 cta=item.get("cta", "Learn More"),
                 audience_note=item.get("audience_note", ""),
                 image_b64=image_b64,
+                creative_spec=creative_spec,
                 format_type=format_type,
                 visual_description=item.get("visual_description", ""),
                 creative_headline=item.get("creative_headline", ""),
@@ -828,6 +804,7 @@ def generate_ads(request: GenerateRequest) -> AdOutput:
         campaign_goal=request.campaign_goal,
         offer=request.offer,
         landing_page_url=request.landing_page_url,
+        brand_name=brand_name,
     )
 
     return AdOutput(

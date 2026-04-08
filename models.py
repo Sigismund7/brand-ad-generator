@@ -28,7 +28,8 @@ class AdVariation:
     description: str         # ≤30 chars
     cta: str                 # "Shop Now" | "Learn More" | "Get Offer" | "Order Now"
     audience_note: str       # targeting recommendation for Meta Ads Manager
-    image_b64: str | None = None  # base64-encoded PNG from Imagen, None if generation failed
+    image_b64: str | None = None  # base64-encoded JPEG from compositor, None if unavailable
+    creative_spec: dict = field(default_factory=dict)  # structured layout spec (Phase 1: derived from copy)
     # Static creative brief fields (from master prompt)
     format_type: str = ""        # e.g. "Product Hero" | "Bold Text Overlay" | "Testimonial Card"
     visual_description: str = "" # detailed layout description of the 1080px canvas
