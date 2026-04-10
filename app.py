@@ -49,6 +49,11 @@ for k, v in _defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+# Convenience defaults for local testing (fields remain fully editable).
+TEST_DEFAULT_BRAND_URL = "https://www.nike.com/ca/"
+TEST_DEFAULT_BRAND_NAME = "Nike"
+TEST_DEFAULT_PRODUCT_NAME = "Pegasus 42"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar
@@ -168,11 +173,13 @@ def _input_form() -> None:
         with col1:
             brand_url = st.text_input(
                 "Brand Website URL",
+                value=TEST_DEFAULT_BRAND_URL,
                 placeholder="https://allbirds.com",
                 help="The brand's main website. We'll find the product page automatically.",
             )
             product_name = st.text_input(
                 "Product Name",
+                value=TEST_DEFAULT_PRODUCT_NAME,
                 placeholder="Men's Tree Runner",
                 help="Type the product name as it appears on the site.",
             )
@@ -180,6 +187,7 @@ def _input_form() -> None:
         with col2:
             brand_name = st.text_input(
                 "Brand Name (optional)",
+                value=TEST_DEFAULT_BRAND_NAME,
                 placeholder="Allbirds",
                 help="Used for Reddit/YouTube research. Inferred from URL if left blank.",
             )

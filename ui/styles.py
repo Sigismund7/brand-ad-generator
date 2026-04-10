@@ -351,6 +351,14 @@ hr { border-color: var(--border) !important; }
     font-weight: 600;
 }
 
+/* Headline / Description / CTA were in nested st.columns and crushed <pre> width — stacked layout + wrap */
+[data-testid="column"] pre {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+}
+
 /* Char counters */
 .adg-char-ok   { color: var(--ok);     font-size: 0.68rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
 .adg-char-warn { color: var(--warn);   font-size: 0.68rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
@@ -703,6 +711,48 @@ hr { border-color: var(--border) !important; }
     cursor: pointer;
 }
 
+.meta-primary-details {
+    margin: 0;
+}
+
+.meta-primary-summary {
+    list-style: none;
+    cursor: pointer;
+    padding-inline-start: 0;
+}
+
+.meta-primary-summary::-webkit-details-marker {
+    display: none;
+}
+
+details[open] .meta-see-more-link {
+    display: none;
+}
+
+.meta-see-less-link {
+    display: none;
+    color: #65676b;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+details[open] .meta-see-less-link {
+    display: inline;
+}
+
+details[open] .meta-primary-teaser {
+    display: none;
+}
+
+.meta-primary-rest {
+    margin-top: 0.35em;
+}
+
+details[open] .meta-primary-rest {
+    margin-top: 0;
+}
+
 .meta-ad-image {
     width: 100%;
     display: block;
@@ -722,6 +772,39 @@ hr { border-color: var(--border) !important; }
     font-size: 13px;
     text-align: center;
     gap: 8px;
+}
+
+.meta-image-unavailable {
+    background: linear-gradient(145deg, rgba(255, 193, 7, 0.12), rgba(33, 37, 41, 0.06));
+    border: 1px solid rgba(255, 193, 7, 0.35);
+    color: #3e4042;
+    padding: 16px 14px;
+    line-height: 1.45;
+    box-sizing: border-box;
+}
+
+.meta-product-reference {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px 10px;
+    background: rgba(0, 0, 0, 0.04);
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.meta-product-reference-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #65676b;
+}
+
+.meta-product-reference-img {
+    width: 100%;
+    max-height: 140px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: #fff;
 }
 
 .meta-info-strip {
@@ -764,6 +847,8 @@ hr { border-color: var(--border) !important; }
 }
 
 .meta-cta-btn {
+    display: inline-block;
+    box-sizing: border-box;
     background: #e4e6eb;
     color: #050505;
     border: none;
@@ -775,6 +860,9 @@ hr { border-color: var(--border) !important; }
     flex-shrink: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     line-height: 1.4;
+    cursor: default;
+    user-select: none;
+    text-align: center;
 }
 
 .meta-reactions-bar {

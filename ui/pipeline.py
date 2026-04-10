@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 import traceback
 
 import streamlit as st
@@ -11,8 +12,9 @@ import base64
 
 from ad_generator import (
     _download_image_bytes,
+    _generate_ad_image,
     _get_client,
-    _render_ad_creative,
+    imagen_stagger_seconds,
     _step1_extract_product_intel,
     _step2_synthesise_voc,
     _step3_generate_ads,
@@ -161,25 +163,32 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
     )
     st.write("OK Ad copy written")
 
-    st.write("// Composing ad creatives...")
+    st.write("// Generating ad creatives with Imagen...")
     images_ok = 0
-    for variation in variations:
-        # product_image_bytes = PDP photo; logo_bytes = brand mark (order verified, not swapped)
-        img = _render_ad_creative(
-            creative_spec=variation.creative_spec,
-            product_image_bytes=product_image_bytes,
-            logo_bytes=logo_bytes,
-            product_image_url=product_image_url,
+    for i, variation in enumerate(variations):
+        if i > 0:
+            stagger = imagen_stagger_seconds()
+            if stagger > 0:
+                time.sleep(stagger)
+        img = _generate_ad_image(
+            client,
+            product_intel,
+            {
+                "angle": variation.angle,
+                "headline": variation.headline,
+                "primary_text": variation.primary_text,
+                "format_type": variation.format_type,
+            },
         )
         variation.image_b64 = img
         if img:
             images_ok += 1
     if images_ok == len(variations):
-        st.write(f"OK {images_ok} creatives composed")
+        st.write(f"OK {images_ok} images generated")
     elif images_ok > 0:
-        st.write(f"WARN {images_ok}/{len(variations)} creatives composed")
+        st.write(f"WARN {images_ok}/{len(variations)} images generated")
     else:
-        st.write("WARN Could not compose images — copy is ready")
+        st.write("WARN Image generation unavailable — copy is ready")
 
     if spinner_slot is not None:
         spinner_slot.empty()

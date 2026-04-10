@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+from textwrap import dedent
 
 import streamlit as st
 
@@ -18,6 +19,17 @@ _ANGLE_LABELS = {
     "Aspiration":   "Aspiration",
     "Social Proof": "Social Proof",
 }
+
+
+def _teaser_upto_word_boundary(text: str, max_chars: int) -> str:
+    """Truncate for preview so we do not split mid-word before 'See more'."""
+    if len(text) <= max_chars:
+        return text
+    chunk = text[:max_chars]
+    last_break = max(chunk.rfind(" "), chunk.rfind("\n"), chunk.rfind("\t"))
+    if last_break > max_chars // 4:
+        return chunk[:last_break].rstrip()
+    return chunk.rstrip()
 
 
 def char_badge(text: str, limit: int) -> str:
@@ -40,13 +52,27 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
         unsafe_allow_html=True,
     )
 
-    preview_col, copy_col = st.columns([9, 11])
+    # Wider copy column; avoid nested st.columns here — they shrink to unusable widths.
+    preview_col, copy_col = st.columns([6, 14])
 
     with preview_col:
         PREVIEW_CHARS = 220
         if len(variation.primary_text) > PREVIEW_CHARS:
-            short = html.escape(variation.primary_text[:PREVIEW_CHARS])
-            text_html = f'{short}... <span class="meta-see-more-link">See more</span>'
+            teaser_raw = _teaser_upto_word_boundary(variation.primary_text, PREVIEW_CHARS)
+            short = html.escape(teaser_raw)
+            full_body = html.escape(variation.primary_text)
+            if teaser_raw:
+                text_html = (
+                    '<details class="meta-primary-details">'
+                    '<summary class="meta-primary-summary">'
+                    f'<span class="meta-primary-teaser">{short}... </span>'
+                    '<span class="meta-see-more-link">See more</span>'
+                    '<span class="meta-see-less-link">See less</span></summary>'
+                    f'<div class="meta-primary-rest">{full_body}</div>'
+                    "</details>"
+                )
+            else:
+                text_html = html.escape(variation.primary_text)
         else:
             text_html = html.escape(variation.primary_text)
 
@@ -54,32 +80,43 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
             image_html = (
                 f'<img class="meta-ad-image" '
                 f'src="data:image/jpeg;base64,{variation.image_b64}" '
-                f'alt="Ad creative" style="width:100%;display:block;" />'
+                f'alt="AI ad creative" style="width:100%;display:block;" />'
             )
-        elif product_image_b64:
-            image_html = (
-                f'<img class="meta-ad-image" '
-                f'src="data:image/jpeg;base64,{product_image_b64}" '
-                f'alt="Product image" style="width:100%;display:block;" />'
-            )
+            reference_html = ""
         else:
             image_html = (
-                '<div class="meta-image-placeholder">'
-                '<span style="font-size:2rem;line-height:1;">🖼</span>'
-                '<span>Generating creative...</span>'
-                '</div>'
+                '<div class="meta-image-placeholder meta-image-unavailable">'
+                '<span style="font-size:1.75rem;line-height:1;">⚠</span>'
+                '<span><strong>AI image not generated</strong> — Imagen may be '
+                "unavailable, overloaded, or rate-limited. Copy above is still valid; "
+                "try again in a minute.</span>"
+                "</div>"
             )
+            if product_image_b64:
+                reference_html = (
+                    '<div class="meta-product-reference">'
+                    '<span class="meta-product-reference-label">Reference — product on store</span>'
+                    '<img class="meta-product-reference-img" '
+                    f'src="data:image/jpeg;base64,{product_image_b64}" '
+                    'alt="Store product reference" />'
+                    "</div>"
+                )
+            else:
+                reference_html = ""
 
         initial = (brand_name or "B")[0].upper()
         safe_brand = html.escape(brand_name or "Brand")
         domain = (brand_name or "brand").lower().replace(" ", "") + ".com"
+        safe_domain = html.escape(domain)
 
         if logo_b64:
             avatar_content = f'<img src="data:image/png;base64,{logo_b64}" alt="{safe_brand} logo" />'
         else:
             avatar_content = initial
 
-        st.markdown(
+        # Indented HTML inside st.markdown is parsed as a Markdown code block (leading
+        # 4+ spaces). Dedented markup renders as real HTML.
+        card_html = dedent(
             f"""
             <div class="meta-card">
               <div class="meta-post-header">
@@ -92,13 +129,14 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
               </div>
               <div class="meta-primary-text-block">{text_html}</div>
               {image_html}
+              {reference_html}
               <div class="meta-info-strip">
                 <div class="meta-strip-left">
-                  <div class="meta-domain-text">{domain}</div>
+                  <div class="meta-domain-text">{safe_domain}</div>
                   <div class="meta-headline-text">{html.escape(variation.headline)}</div>
                   <div class="meta-desc-text">{html.escape(variation.description)}</div>
                 </div>
-                <button class="meta-cta-btn">{html.escape(variation.cta)}</button>
+                <span class="meta-cta-btn" role="button">{html.escape(variation.cta)}</span>
               </div>
               <div class="meta-reactions-bar">
                 <div class="meta-reaction-btn">👍 Like</div>
@@ -106,9 +144,9 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
                 <div class="meta-reaction-btn">↗ Share</div>
               </div>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            """
+        ).strip()
+        st.markdown(card_html, unsafe_allow_html=True)
 
     with copy_col:
         st.markdown('<div class="adg-field-label">Primary Text</div>', unsafe_allow_html=True)
@@ -126,18 +164,16 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
             unsafe_allow_html=True,
         )
 
-        col1, col2, col3 = st.columns([5, 4, 3])
-        with col1:
-            st.markdown('<div class="adg-field-label">Headline</div>', unsafe_allow_html=True)
-            st.code(variation.headline, language=None)
-            st.markdown(char_badge(variation.headline, 27), unsafe_allow_html=True)
-        with col2:
-            st.markdown('<div class="adg-field-label">Description</div>', unsafe_allow_html=True)
-            st.code(variation.description, language=None)
-            st.markdown(char_badge(variation.description, 30), unsafe_allow_html=True)
-        with col3:
-            st.markdown('<div class="adg-field-label">CTA Button</div>', unsafe_allow_html=True)
-            st.code(variation.cta, language=None)
+        st.markdown('<div class="adg-field-label">Headline</div>', unsafe_allow_html=True)
+        st.code(variation.headline, language=None)
+        st.markdown(char_badge(variation.headline, 27), unsafe_allow_html=True)
+
+        st.markdown('<div class="adg-field-label">Description</div>', unsafe_allow_html=True)
+        st.code(variation.description, language=None)
+        st.markdown(char_badge(variation.description, 30), unsafe_allow_html=True)
+
+        st.markdown('<div class="adg-field-label">CTA Button</div>', unsafe_allow_html=True)
+        st.code(variation.cta, language=None)
 
         st.markdown(
             f'<div class="adg-audience"><strong>Targeting //</strong> {html.escape(variation.audience_note)}</div>',
