@@ -38,6 +38,15 @@ html, body, .stApp {
     font-family: var(--font-body) !important;
 }
 
+/* Tighter main padding (helps Simple Browser / embedded preview feel less “airy”) */
+section.main > div.block-container {
+    padding-top: 1.25rem !important;
+    padding-bottom: 2rem !important;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+    max-width: 100% !important;
+}
+
 /* Grid background */
 .stApp {
     background-image:
@@ -150,7 +159,8 @@ input:focus, textarea:focus {
     box-shadow: 0 1px 2px rgba(0,0,0,0.06) !important;
 }
 [data-testid="stCode"] pre, [data-testid="stCode"] code {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Emoji', 'Segoe UI Symbol',
+      'Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
     font-size: 0.88rem !important;
     color: #050505 !important;
     background: transparent !important;
@@ -645,8 +655,8 @@ hr { border-color: var(--border) !important; }
 .meta-post-header {
     display: flex;
     align-items: center;
-    padding: 12px 16px 8px;
-    gap: 8px;
+    padding: 10px 14px 6px;
+    gap: 6px;
 }
 
 .meta-avatar {
@@ -696,12 +706,13 @@ hr { border-color: var(--border) !important; }
 }
 
 .meta-primary-text-block {
-    padding: 0 16px 10px;
+    padding: 0 14px 8px;
     font-size: 14px;
-    line-height: 1.55;
+    line-height: 1.5;
     color: #050505;
     word-break: break-word;
     white-space: pre-line;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Emoji', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 .meta-see-more-link {

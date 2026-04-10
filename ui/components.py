@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import html
+import io
 from textwrap import dedent
 
 import streamlit as st
+from PIL import Image
 
 from models import AdVariation, VocSummary
 
@@ -19,6 +22,38 @@ _ANGLE_LABELS = {
     "Aspiration":   "Aspiration",
     "Social Proof": "Social Proof",
 }
+
+
+def _logo_src_from_b64(logo_b64: str) -> str | None:
+    """
+    Build a correct data: URL for the downloaded logo. Logos are often JPEG/WebP/ICO/SVG;
+    assuming PNG breaks the browser image (broken icon + clipped alt text).
+    """
+    try:
+        raw = base64.b64decode(logo_b64)
+    except Exception:
+        return None
+    if len(raw) < 8:
+        return None
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return f"data:image/png;base64,{logo_b64}"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return f"data:image/jpeg;base64,{logo_b64}"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return f"data:image/gif;base64,{logo_b64}"
+    if raw.startswith(b"RIFF") and len(raw) > 12 and raw[8:12] == b"WEBP":
+        return f"data:image/webp;base64,{logo_b64}"
+    strip = raw.lstrip()
+    head = strip[:300].lower()
+    if b"<svg" in head or head.startswith(b"<?xml") or head.startswith(b"<!doctype"):
+        return "data:image/svg+xml;base64," + base64.b64encode(raw).decode("ascii")
+    try:
+        im = Image.open(io.BytesIO(raw))
+        buf = io.BytesIO()
+        im.convert("RGBA").save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return None
 
 
 def _teaser_upto_word_boundary(text: str, max_chars: int) -> str:
@@ -77,17 +112,13 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
             text_html = html.escape(variation.primary_text)
 
         if variation.image_b64:
-            image_html = (
-                f'<img class="meta-ad-image" '
-                f'src="data:image/jpeg;base64,{variation.image_b64}" '
-                f'alt="AI ad creative" style="width:100%;display:block;" />'
-            )
+            placeholder_html = ""
             reference_html = ""
         else:
-            image_html = (
+            placeholder_html = (
                 '<div class="meta-image-placeholder meta-image-unavailable">'
                 '<span style="font-size:1.75rem;line-height:1;">⚠</span>'
-                '<span><strong>AI image not generated</strong> — Imagen may be '
+                '<span><strong>AI image not generated</strong> — the image model may be '
                 "unavailable, overloaded, or rate-limited. Copy above is still valid; "
                 "try again in a minute.</span>"
                 "</div>"
@@ -98,7 +129,7 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
                     '<span class="meta-product-reference-label">Reference — product on store</span>'
                     '<img class="meta-product-reference-img" '
                     f'src="data:image/jpeg;base64,{product_image_b64}" '
-                    'alt="Store product reference" />'
+                    'alt="Store product reference" style="width:100%;display:block;" />'
                     "</div>"
                 )
             else:
@@ -110,13 +141,21 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
         safe_domain = html.escape(domain)
 
         if logo_b64:
-            avatar_content = f'<img src="data:image/png;base64,{logo_b64}" alt="{safe_brand} logo" />'
+            logo_src = _logo_src_from_b64(logo_b64)
+            if logo_src:
+                avatar_content = (
+                    f'<img src="{logo_src}" alt="" role="presentation" '
+                    'width="40" height="40" loading="lazy" />'
+                )
+            else:
+                avatar_content = initial
         else:
             avatar_content = initial
 
         # Indented HTML inside st.markdown is parsed as a Markdown code block (leading
         # 4+ spaces). Dedented markup renders as real HTML.
-        card_html = dedent(
+        # Large data: URIs break Streamlit markdown; render AI image via st.image above the strip.
+        card_top_html = dedent(
             f"""
             <div class="meta-card">
               <div class="meta-post-header">
@@ -128,7 +167,11 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
                 <div class="meta-more-btn">···</div>
               </div>
               <div class="meta-primary-text-block">{text_html}</div>
-              {image_html}
+            """
+        ).strip()
+
+        card_bottom_html = dedent(
+            f"""
               {reference_html}
               <div class="meta-info-strip">
                 <div class="meta-strip-left">
@@ -146,7 +189,19 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
             </div>
             """
         ).strip()
-        st.markdown(card_html, unsafe_allow_html=True)
+
+        st.markdown(card_top_html, unsafe_allow_html=True)
+        st.markdown('<div class="meta-ad-image-slot">', unsafe_allow_html=True)
+
+        if variation.image_b64:
+            raw_bytes = base64.b64decode(variation.image_b64)
+            pil_img = Image.open(io.BytesIO(raw_bytes))
+            st.image(pil_img, use_container_width=True)
+        else:
+            st.markdown(placeholder_html, unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(card_bottom_html, unsafe_allow_html=True)
 
     with copy_col:
         st.markdown('<div class="adg-field-label">Primary Text</div>', unsafe_allow_html=True)

@@ -44,6 +44,7 @@ _defaults: dict = {
     "running": False,
     "show_product_url": False,
     "last_error": None,
+    "cached_image_briefs": None,
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -256,6 +257,7 @@ def _input_form() -> None:
 
         st.session_state.result = None
         st.session_state.last_error = None
+        st.session_state.cached_image_briefs = None
         st.session_state.running = True
         st.session_state.show_product_url = False
 
@@ -295,9 +297,22 @@ def _render_results(output: AdOutput) -> None:
     voc_panel(output.voc_summary, output.product_intel)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("<< Generate for another product"):
+    if st.session_state.cached_image_briefs and st.button(
+        "Retry images //",
+        help="Regenerate all three ad images using cached briefs (3 API calls, no brief step).",
+        disabled=st.session_state.running,
+    ):
+        if not os.getenv("GEMINI_API_KEY", "").strip():
+            st.error("Add your Gemini API key in the sidebar to continue.")
+        else:
+            st.session_state.running = True
+            run_generation("", "", "", "", images_only=True)
+            st.rerun()
+
+    if st.button("<< Generate for another product", disabled=st.session_state.running):
         st.session_state.result = None
         st.session_state.last_error = None
+        st.session_state.cached_image_briefs = None
         st.session_state.show_product_url = False
         st.rerun()
 

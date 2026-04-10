@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import time
 import traceback
 
@@ -11,17 +10,44 @@ import streamlit as st
 import base64
 
 from ad_generator import (
+    _brief_to_prompt,
     _download_image_bytes,
-    _generate_ad_image,
+    _generate_ad_image_nb,
+    _generate_all_image_briefs,
     _get_client,
-    imagen_stagger_seconds,
     _step1_extract_product_intel,
     _step2_synthesise_voc,
     _step3_generate_ads,
 )
-from models import AdOutput, GenerateRequest, ProductNotFoundError
+from models import AdOutput, AdVariation, GenerateRequest, ProductNotFoundError
 from scraper import extract_product_image_url, fetch_brand_logo_url, find_product_url, scrape_product_page
 from voc import gather_voc
+
+
+def _run_nb_image_loop(
+    client,
+    variations: list[AdVariation],
+    briefs: list[dict],
+) -> int:
+    """
+    Generate image 1, sleep 5s, image 2, sleep 5s, image 3 (4 API calls total including the batch brief step).
+    After each successful or failed _generate_ad_image_nb, wait 5s before the next image (not after the last).
+    """
+    images_ok = 0
+    n = len(variations)
+
+    for i, variation in enumerate(variations):
+        prompt = _brief_to_prompt(briefs[i])
+        print(f"[IMAGE] {variation.angle} prompt length={len(prompt)}")
+        img = _generate_ad_image_nb(client, prompt, aspect_ratio="4:5")
+        variation.image_b64 = img
+        if img:
+            images_ok += 1
+
+        if i < n - 1:
+            time.sleep(5)
+
+    return images_ok
 
 
 def run_generation(
@@ -33,25 +59,36 @@ def run_generation(
     campaign_goal: str = "Conversions",
     offer: str = "",
     landing_page_url: str = "",
+    *,
+    images_only: bool = False,
 ) -> None:
     """
     Runs the full ad generation pipeline with a live st.status() progress block.
     Saves AdOutput to st.session_state.result on success, or sets
     st.session_state.last_error on failure.
+
+    When images_only=True, skips scraping/steps 1–3 and only runs Nano Banana
+    using st.session_state.cached_image_briefs (3 calls).
     """
-    request = GenerateRequest(
-        brand_url=brand_url.strip(),
-        product_name=product_name.strip(),
-        product_url=product_url_override.strip() or None,
-        brand_name=brand_name.strip() or None,
-        platform=platform,
-        campaign_goal=campaign_goal,
-        offer=offer.strip(),
-        landing_page_url=landing_page_url.strip(),
-    )
+    if images_only:
+        request = None
+    else:
+        request = GenerateRequest(
+            brand_url=brand_url.strip(),
+            product_name=product_name.strip(),
+            product_url=product_url_override.strip() or None,
+            brand_name=brand_name.strip() or None,
+            platform=platform,
+            campaign_goal=campaign_goal,
+            offer=offer.strip(),
+            landing_page_url=landing_page_url.strip(),
+        )
 
     try:
-        with st.status("Generating your Meta ads...", expanded=True) as status:
+        with st.status(
+            "Retrying images..." if images_only else "Generating your Meta ads...",
+            expanded=True,
+        ) as status:
             spinner_slot = st.empty()
             spinner_slot.markdown(
                 '<div class="adg-spinner-wrap">'
@@ -60,7 +97,11 @@ def run_generation(
                 '</div>',
                 unsafe_allow_html=True,
             )
-            result = _generate_with_progress(request, status, spinner_slot)
+            if images_only:
+                result = _generate_images_from_cache(status, spinner_slot)
+            else:
+                assert request is not None
+                result = _generate_with_progress(request, status, spinner_slot)
 
         st.session_state.result = result
         st.session_state.last_error = None
@@ -81,6 +122,33 @@ def run_generation(
             f"```\n{traceback.format_exc()}\n```"
         )
         st.session_state.running = False
+
+
+def _generate_images_from_cache(status, spinner_slot=None) -> AdOutput:
+    """Regenerate images only; requires result + cached_image_briefs in session_state."""
+    result = st.session_state.result
+    briefs = st.session_state.cached_image_briefs
+    if result is None or not briefs or len(briefs) != len(result.variations):
+        raise ValueError(
+            "Cannot retry images — cached briefs missing. Run a full generation first."
+        )
+
+    client = _get_client()
+    st.write("// Retrying images (cached briefs, no text call)...")
+    images_ok = _run_nb_image_loop(client, result.variations, briefs)
+
+    if images_ok == len(result.variations):
+        st.write(f"OK {images_ok} images generated")
+    elif images_ok > 0:
+        st.write(f"WARN {images_ok}/{len(result.variations)} images generated")
+    else:
+        st.write("WARN Image generation unavailable — copy is ready")
+
+    if spinner_slot is not None:
+        spinner_slot.empty()
+
+    status.update(label="Complete // your ads are ready", state="complete", expanded=False)
+    return result
 
 
 def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None) -> AdOutput:
@@ -154,7 +222,6 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
         client,
         product_intel,
         voc_brief,
-        generate_images=False,
         platform=request.platform,
         campaign_goal=request.campaign_goal,
         offer=request.offer,
@@ -163,26 +230,14 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
     )
     st.write("OK Ad copy written")
 
-    st.write("// Generating ad creatives with Imagen...")
-    images_ok = 0
-    for i, variation in enumerate(variations):
-        if i > 0:
-            stagger = imagen_stagger_seconds()
-            if stagger > 0:
-                time.sleep(stagger)
-        img = _generate_ad_image(
-            client,
-            product_intel,
-            {
-                "angle": variation.angle,
-                "headline": variation.headline,
-                "primary_text": variation.primary_text,
-                "format_type": variation.format_type,
-            },
-        )
-        variation.image_b64 = img
-        if img:
-            images_ok += 1
+    st.write("// Generating image briefs (single request)...")
+    briefs = _generate_all_image_briefs(client, product_intel, variations, brand_name)
+    st.session_state.cached_image_briefs = briefs
+    st.write("OK Image briefs ready")
+
+    st.write("// Generating ad creatives with Nano Banana...")
+    images_ok = _run_nb_image_loop(client, variations, briefs)
+
     if images_ok == len(variations):
         st.write(f"OK {images_ok} images generated")
     elif images_ok > 0:
