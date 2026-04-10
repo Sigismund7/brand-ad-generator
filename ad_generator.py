@@ -40,8 +40,8 @@ from models import (
 from scraper import find_product_url, scrape_product_page
 from voc import gather_voc
 
-_MODEL = "gemini-2.5-flash"
-_IMAGE_MODEL = "gemini-2.5-flash-image"  # Nano Banana — native Gemini image generation
+_MODEL = "gemini-3-flash-preview"
+_IMAGE_MODEL = "gemini-3.1-flash-image-preview"  # Nano Banana — native Gemini image generation
 
 # Matches ui/components.py char_badge(..., 500) for Primary Text — model often overshoots.
 _PRIMARY_TEXT_MAX_CHARS = 500
@@ -50,9 +50,9 @@ log = logging.getLogger(__name__)
 
 # region agent log
 _DEBUG_AGENT_LOG = (
-    "/Users/daschelgorgenyi/Desktop/Test project Speed run/brand-ad-generator/.cursor/debug-06d5a7.log"
+    "/Users/daschelgorgenyi/Desktop/Test project Speed run/brand-ad-generator/.cursor/debug-da0215.log"
 )
-_DEBUG_SESSION_ID = "06d5a7"
+_DEBUG_SESSION_ID = "da0215"
 
 
 def _http_status_from_exception(exc: BaseException) -> int | None:
@@ -195,6 +195,17 @@ def _call(client: genai.Client, system: str, user: str, *, max_attempts: int = 6
     last_exc: BaseException | None = None
     for attempt in range(max_attempts):
         try:
+            # region agent log
+            _debug_agent_log(
+                "H1",
+                "generate_content_attempt",
+                {
+                    "model": _MODEL,
+                    "attempt": attempt + 1,
+                    "runId": "post-fix",
+                },
+            )
+            # endregion agent log
             response = client.models.generate_content(
                 model=_MODEL,
                 contents=f"SYSTEM:\n{system}\n\nUSER:\n{user}",

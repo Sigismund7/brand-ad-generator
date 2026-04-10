@@ -1,0 +1,18 @@
+---
+description: Ad creative imagery uses deterministic composition, not generative product renders
+globs: ad_generator.py,renderer.py,asset_pipeline.py
+---
+
+# Ad creative imagery — composition only
+
+Product hero visuals come from the **scraped product image** plus a structured **`creative_spec`** JSON rendered with Pillow (`renderer.compose`). **Do not** add Imagen or other image-model calls that generate or redraw the product from text.
+
+## Rules
+
+1. **No product generation** — Never call image models with product descriptions, names, or features in the prompt for the hero SKU.
+
+2. **LLM output is layout only** — Step 3 produces `creative_spec` (canvas, background, product_zone, text_zones, brand_badge, style). The pipeline merges defaults via `merge_creative_spec_defaults`.
+
+3. **Optional future exception** — Phase 4 may add **background-only** AI generation (`ai_generated` mode) with prompts that explicitly exclude products; until implemented, use `solid`, `gradient`, or `blur`.
+
+4. **Step 1 `visual_appearance`** — Still useful for copy and merchandising context; it must **not** be turned back into an image prompt for a generative product render.

@@ -155,9 +155,12 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
         # Indented HTML inside st.markdown is parsed as a Markdown code block (leading
         # 4+ spaces). Dedented markup renders as real HTML.
         # Large data: URIs break Streamlit markdown; render AI image via st.image above the strip.
+        # Two valid HTML fragments (Streamlit blocks are separate DOM trees). Do not span
+        # one <div class="meta-card"> across markdown + st.image + markdown — orphan tags
+        # caused a duplicate “ghost” strip + reactions bar below the real preview.
         card_top_html = dedent(
             f"""
-            <div class="meta-card">
+            <div class="meta-card meta-card--top">
               <div class="meta-post-header">
                 <div class="meta-avatar">{avatar_content}</div>
                 <div class="meta-page-info">
@@ -167,11 +170,13 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
                 <div class="meta-more-btn">···</div>
               </div>
               <div class="meta-primary-text-block">{text_html}</div>
+            </div>
             """
         ).strip()
 
         card_bottom_html = dedent(
             f"""
+            <div class="meta-card meta-card--bottom">
               {reference_html}
               <div class="meta-info-strip">
                 <div class="meta-strip-left">
@@ -191,16 +196,18 @@ def ad_card(variation: AdVariation, idx: int, brand_name: str = "", product_imag
         ).strip()
 
         st.markdown(card_top_html, unsafe_allow_html=True)
-        st.markdown('<div class="meta-ad-image-slot">', unsafe_allow_html=True)
-
+        # st.image must sit between markdown blocks; wrapping in a separate open/close
+        # <div> does not nest the image in Streamlit and adds a visible gap + broken HTML.
         if variation.image_b64:
             raw_bytes = base64.b64decode(variation.image_b64)
             pil_img = Image.open(io.BytesIO(raw_bytes))
             st.image(pil_img, use_container_width=True)
         else:
-            st.markdown(placeholder_html, unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="meta-card meta-card--media">{placeholder_html}</div>',
+                unsafe_allow_html=True,
+            )
 
-        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown(card_bottom_html, unsafe_allow_html=True)
 
     with copy_col:

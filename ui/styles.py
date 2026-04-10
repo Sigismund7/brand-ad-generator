@@ -642,14 +642,72 @@ hr { border-color: var(--border) !important; }
     margin-bottom: 0.75rem;
 }
 
+/* Base shared by stacked preview fragments (each st.markdown is its own subtree). */
 .meta-card {
     background: #fff;
-    border-radius: 8px;
-    border: 1px solid #dddfe2;
-    overflow: hidden;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.12);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     width: 100%;
+    min-width: 0;
+    position: relative;
+    z-index: 0;
+}
+
+.meta-card--top {
+    border: 1px solid #dddfe2;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+    box-shadow: none;
+}
+
+/* Middle: generated image (st.image) or placeholder markdown — side borders only */
+.meta-card--media {
+    border-left: 1px solid #dddfe2;
+    border-right: 1px solid #dddfe2;
+    border-top: none;
+    border-bottom: none;
+    overflow: hidden;
+    box-shadow: none;
+}
+
+.meta-card--bottom {
+    border: 1px solid #dddfe2;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+}
+
+/* Streamlit column + st.image: keep preview column from collapsing below readable width */
+[data-testid="column"] .meta-card {
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* st.image between fragments: side borders + collapse default block margins */
+section.main [data-testid="column"] [data-testid="stVerticalBlock"] > div:has([data-testid="stImage"]) {
+    border-left: 1px solid #dddfe2;
+    border-right: 1px solid #dddfe2;
+    box-sizing: border-box;
+    background: #fff;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+/* Streamlit adds default vertical margins on st.image and the next block — large gap
+   before the grey link strip; flush the image to the strip below. */
+section.main [data-testid="column"] [data-testid="stImage"] {
+    margin-bottom: 0 !important;
+}
+section.main [data-testid="column"] [data-testid="stImage"] img {
+    display: block;
+    margin-bottom: 0 !important;
+}
+section.main [data-testid="column"] [data-testid="stVerticalBlock"] > div:has([data-testid="stImage"]) + div {
+    margin-top: 0 !important;
+}
+section.main [data-testid="column"] div:has([data-testid="stImage"]) + div {
+    margin-top: 0 !important;
 }
 
 .meta-post-header {
@@ -818,17 +876,25 @@ details[open] .meta-primary-rest {
     background: #fff;
 }
 
+/* Grid + minmax(0,1fr): avoids flex bug where long CTA (flex-shrink:0) crushes the
+   text column to ~0px — caused vertical char-by-char wrapping in slot 2 on narrow widths. */
 .meta-info-strip {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     padding: 10px 12px;
     background: #f0f2f5;
     border-top: 1px solid #dddfe2;
     gap: 10px;
+    column-gap: 12px;
     min-height: 64px;
+    margin-top: 0;
 }
 
-.meta-strip-left { flex: 1; min-width: 0; }
+.meta-strip-left {
+    min-width: 0;
+    overflow: hidden;
+}
 
 .meta-domain-text {
     font-size: 11px;
@@ -836,6 +902,9 @@ details[open] .meta-primary-rest {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .meta-headline-text {
@@ -860,6 +929,7 @@ details[open] .meta-primary-rest {
 .meta-cta-btn {
     display: inline-block;
     box-sizing: border-box;
+    max-width: 100%;
     background: #e4e6eb;
     color: #050505;
     border: none;
@@ -868,12 +938,14 @@ details[open] .meta-primary-rest {
     font-size: 14px;
     font-weight: 600;
     white-space: nowrap;
-    flex-shrink: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     line-height: 1.4;
     cursor: default;
     user-select: none;
     text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    justify-self: end;
 }
 
 .meta-reactions-bar {
