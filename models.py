@@ -61,6 +61,7 @@ class AdOutput:
     product_image_url: str | None = None   # canonical product image URL from scraper
     product_image_b64: str | None = None   # base64 JPEG for use in ad preview
     brand_logo_b64: str | None = None      # base64-encoded brand logo for avatar
+    judge_result: object = None  # JudgeResult from synthetic_judge, or None
 
 
 class ProductNotFoundError(Exception):

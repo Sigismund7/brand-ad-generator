@@ -7,6 +7,7 @@ Fonts: Orbitron (headings) · Syne (body) · JetBrains Mono (technical/code)
 
 from __future__ import annotations
 
+import html
 import os
 import sys
 
@@ -45,6 +46,10 @@ _defaults: dict = {
     "show_product_url": False,
     "last_error": None,
     "cached_image_briefs": None,
+    "persona_evaluation": None,
+    "optimized_variations": None,
+    "persona_text": None,
+    "voc_brief": {},
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -258,6 +263,10 @@ def _input_form() -> None:
         st.session_state.result = None
         st.session_state.last_error = None
         st.session_state.cached_image_briefs = None
+        st.session_state.persona_evaluation = None
+        st.session_state.optimized_variations = None
+        st.session_state.persona_text = None
+        st.session_state.voc_brief = {}
         st.session_state.running = True
         st.session_state.show_product_url = False
 
@@ -293,6 +302,140 @@ def _render_results(output: AdOutput) -> None:
     for i, variation in enumerate(output.variations):
         ad_card(variation, i, output.brand_name, product_image_b64=output.product_image_b64, logo_b64=output.brand_logo_b64)
 
+    # Synthetic Judge Scorecard
+    if output.judge_result:
+        jr = output.judge_result
+        st.divider()
+        st.markdown(
+            '<div class="adg-results-header" style="font-size:1.1rem;">Audience Prediction</div>'
+            '<div class="adg-results-sub">5 synthetic consumers evaluated your ads before launch</div>',
+            unsafe_allow_html=True,
+        )
+
+        for i, vs in enumerate(jr.variant_scores):
+            is_winner = i == jr.predicted_winner_index
+            winner_badge = ' <span style="color:#22D3A0;font-weight:700;">🏆 PREDICTED WINNER</span>' if is_winner else ''
+
+            # Emotional distribution as chips
+            emotion_chips = ""
+            for emotion, count in (vs.emotional_distribution or {}).items():
+                emotion_chips += f'<span class="adg-voc-chip">{emotion}: {count}</span>'
+
+            st.markdown(
+                f'<div class="adg-card">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">'
+                f'<span class="adg-angle" style="font-size:0.95rem;">{html.escape(vs.angle)}{winner_badge}</span>'
+                f'<span style="font-family:var(--font-display);font-size:1.4rem;color:{"#22D3A0" if is_winner else "#BDD4E8"};">{vs.composite_score}/10</span>'
+                f'</div>'
+                f'<div style="display:flex;gap:1.5rem;margin-bottom:0.6rem;">'
+                f'<span style="font-size:0.78rem;color:#4E7090;">Scroll Stop: {vs.mean_scroll_stop}/10</span>'
+                f'<span style="font-size:0.78rem;color:#4E7090;">Click: {vs.mean_click_likelihood}/10</span>'
+                f'</div>'
+                f'<div style="margin-bottom:0.5rem;">{emotion_chips}</div>'
+                f'<div style="font-size:0.78rem;color:#4E7090;margin-bottom:0.3rem;">'
+                f'<strong>Top objection:</strong> {html.escape(vs.top_objection)}</div>'
+                f'<div style="font-size:0.78rem;color:#4E7090;">'
+                f'<strong>Resonant phrase:</strong> "{html.escape(vs.top_resonant_phrase)}"</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Population-level insight
+        st.markdown(
+            f'<div class="adg-audience" style="margin-top:1rem;">'
+            f'<strong>Cross-variant insight //</strong> '
+            f'Top objection across all agents: "{html.escape(jr.population_top_objection)}" '
+            f'— Confidence: {jr.confidence}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Persona Optimization
+    st.divider()
+    st.markdown(
+        '<div class="adg-results-header" style="font-size:1.1rem;">Persona Optimization</div>'
+        '<div class="adg-results-sub">Describe a target persona to re-optimize these ads</div>',
+        unsafe_allow_html=True,
+    )
+
+    persona_input = st.text_area(
+        "persona_input",
+        placeholder="e.g. 28-year-old female marathon runner, trains 5x/week, recovering from plantar fasciitis, reads every review before buying, skeptical of big brand marketing",
+        height=80,
+        label_visibility="collapsed",
+    )
+
+    if st.button("Optimize for Persona //", disabled=not persona_input.strip()):
+        from ui.pipeline import run_persona_optimization
+
+        result = run_persona_optimization(
+            persona=persona_input.strip(),
+            product_intel=output.product_intel,
+            voc_brief=st.session_state.get("voc_brief", {}),
+            existing_variations=output.variations,
+            brand_name=output.brand_name,
+        )
+        if result:
+            evaluation, optimized = result
+            st.session_state.persona_evaluation = evaluation
+            st.session_state.optimized_variations = optimized
+            st.session_state.persona_text = persona_input.strip()
+            st.rerun()
+
+    # Display evaluation + optimized ads if they exist
+    if st.session_state.get("persona_evaluation"):
+        ev = st.session_state.persona_evaluation
+
+        st.markdown(
+            f'<div class="adg-persona-box" style="margin:1rem 0;">'
+            f'{html.escape(str(ev.get("persona_summary") or ""))}</div>',
+            unsafe_allow_html=True,
+        )
+
+        for e in ev.get("evaluations", []):
+            score = e.get("click_score", "?")
+            angle = e.get("angle", "")
+            works = e.get("what_works", "")
+            fails = e.get("what_fails", "")
+            missing = e.get("missing", "")
+            st.markdown(
+                f'<div class="adg-card">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">'
+                f'<span class="adg-angle">{html.escape(angle)}</span>'
+                f'<span style="font-family:var(--font-display);font-size:1.2rem;color:#BDD4E8;">{score}/10</span>'
+                f'</div>'
+                f'<div style="font-size:0.78rem;color:#22D3A0;margin-bottom:0.3rem;">✓ {html.escape(works)}</div>'
+                f'<div style="font-size:0.78rem;color:#F43F5E;margin-bottom:0.3rem;">✗ {html.escape(fails)}</div>'
+                f'<div style="font-size:0.78rem;color:#4E7090;">Missing: {html.escape(missing)}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        recs = ev.get("recommendations", {})
+        tone = recs.get("tone_shift", "")
+        if tone:
+            st.markdown(
+                f'<div class="adg-audience" style="margin:0.75rem 0;">'
+                f'<strong>Tone shift //</strong> {html.escape(tone)}</div>',
+                unsafe_allow_html=True,
+            )
+
+    if st.session_state.get("optimized_variations"):
+        persona_label = html.escape(st.session_state.get("persona_text") or "")
+        st.markdown(
+            '<div class="adg-results-header" style="margin-top:2rem;font-size:1.1rem;">Optimized Ads</div>'
+            f'<div class="adg-results-sub">Tailored for: {persona_label}</div>',
+            unsafe_allow_html=True,
+        )
+        for i, v in enumerate(st.session_state.optimized_variations):
+            ad_card(
+                v,
+                i + 10,
+                output.brand_name,
+                product_image_b64=output.product_image_b64,
+                logo_b64=output.brand_logo_b64,
+            )
+
     st.divider()
     voc_panel(output.voc_summary, output.product_intel)
 
@@ -313,6 +456,10 @@ def _render_results(output: AdOutput) -> None:
         st.session_state.result = None
         st.session_state.last_error = None
         st.session_state.cached_image_briefs = None
+        st.session_state.persona_evaluation = None
+        st.session_state.optimized_variations = None
+        st.session_state.persona_text = None
+        st.session_state.voc_brief = {}
         st.session_state.show_product_url = False
         st.rerun()
 

@@ -1251,6 +1251,150 @@ def _step3_generate_ads(
     return variations
 
 
+def _evaluate_with_persona(
+    client: genai.Client,
+    persona: str,
+    product_intel: dict,
+    variations: list,
+) -> dict:
+    """Evaluate existing ads through a specific persona's perspective."""
+    system = """
+You are a consumer psychologist. Given a specific persona and 3 ad variants,
+evaluate each ad as if you ARE that person scrolling through Instagram.
+
+Be specific, critical, and honest. A skeptical persona should be hard to impress.
+
+Return ONLY valid JSON:
+{
+  "persona_summary": "one sentence restating who this person is",
+  "evaluations": [
+    {
+      "angle": "Pain Point",
+      "would_stop_scrolling": true/false,
+      "hook_reaction": "what they think when they read the first line",
+      "emotional_response": "how this ad makes them feel",
+      "click_score": 7,
+      "what_works": "the specific element that resonates",
+      "what_fails": "the specific element that doesn't land",
+      "missing": "what would make this ad irresistible for this persona"
+    }
+  ],
+  "recommendations": {
+    "copy_changes": ["specific change 1", "specific change 2"],
+    "image_changes": ["specific change 1", "specific change 2"],
+    "tone_shift": "how the overall tone should change for this persona"
+  }
+}
+""".strip()
+
+    ads_summary = []
+    for v in variations:
+        ads_summary.append({
+            "angle": v.angle,
+            "headline": v.headline,
+            "primary_text": v.primary_text[:400],
+            "description": v.description,
+            "cta": v.cta,
+            "trust": v.trust_element,
+        })
+
+    user = f"""
+PERSONA: {persona}
+
+PRODUCT: {json.dumps(product_intel, indent=2)}
+
+ADS TO EVALUATE:
+{json.dumps(ads_summary, indent=2)}
+
+Evaluate each ad as this specific persona. Stay in character.
+""".strip()
+
+    raw = _call(client, system, user)
+    data = _parse_json(raw)
+    if not isinstance(data, dict):
+        raise ValueError(f"Persona evaluation expected a JSON object, got {type(data)}")
+    return data
+
+
+def _generate_persona_optimized_ads(
+    client: genai.Client,
+    product_intel: dict,
+    voc_brief: dict,
+    persona: str,
+    evaluation: dict,
+    brand_name: str = "",
+) -> list:
+    """Generate 3 improved ads based on persona feedback."""
+    user = f"""
+PRODUCT INTELLIGENCE:
+{json.dumps(product_intel, indent=2)}
+
+VOC BRIEF:
+{json.dumps(voc_brief, indent=2)}
+
+TARGET PERSONA: {persona}
+
+PERSONA EVALUATION OF CURRENT ADS:
+{json.dumps(evaluation, indent=2)}
+
+Write 3 IMPROVED Meta ad variations specifically optimized for this persona.
+Address every criticism from the evaluation. Incorporate the recommendations.
+Each variation: different angle (Pain Point, Aspiration, Social Proof), different hook formula.
+
+Return the same JSON array format as standard ad generation (array of 3 objects).
+""".strip()
+
+    raw = _call(client, _STEP3_SYSTEM, user)
+    data = _parse_json(raw)
+
+    if not isinstance(data, list):
+        raise ValueError(f"Expected JSON array, got {type(data)}")
+
+    variations: list[AdVariation] = []
+    for item in data:
+        angle = item.get("angle", "")
+        format_type = item.get("format_type", "")
+        raw_spec = _parse_creative_spec_field(item.get("creative_spec"))
+        creative_spec = merge_creative_spec_defaults(raw_spec, brand_name, item)
+        image_b64 = None
+        try:
+            brief = _generate_image_brief(
+                client,
+                product_intel,
+                angle=angle,
+                headline=item.get("creative_headline") or item.get("headline", ""),
+                primary_text=item.get("primary_text", ""),
+                cta=item.get("creative_cta") or item.get("cta", "Shop Now"),
+                brand_name=brand_name,
+            )
+            prompt = _brief_to_prompt(brief)
+            image_b64 = _generate_ad_image_nb(client, prompt, aspect_ratio="4:5")
+        except Exception as exc:
+            print(f"[PERSONA] Image gen failed for optimized ad: {exc}")
+
+        variations.append(
+            AdVariation(
+                angle=angle,
+                framework=item.get("framework", ""),
+                primary_text=_clamp_primary_text_for_ui(item.get("primary_text", "")),
+                headline=item.get("headline", "")[:40],
+                description=item.get("description", "")[:30],
+                cta=item.get("cta", "Shop Now"),
+                audience_note=item.get("audience_note", ""),
+                image_b64=image_b64,
+                creative_spec=creative_spec,
+                format_type=format_type,
+                visual_description=item.get("visual_description", ""),
+                creative_headline=item.get("creative_headline", ""),
+                creative_subtext=item.get("creative_subtext", ""),
+                creative_cta=item.get("creative_cta", ""),
+                trust_element=item.get("trust_element", ""),
+                visual_style=item.get("visual_style", ""),
+            )
+        )
+    return variations
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------

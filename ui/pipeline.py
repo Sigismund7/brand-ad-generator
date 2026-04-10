@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import traceback
+from typing import Any, Optional, Tuple
 
 import streamlit as st
 
@@ -215,6 +216,7 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
 
     st.write("// Synthesising consumer brief...")
     voc_brief = _step2_synthesise_voc(client, product_intel, voc_summary)
+    st.session_state.voc_brief = voc_brief
     st.write("OK Consumer brief synthesised")
 
     st.write("// Writing your Meta ads...")
@@ -245,6 +247,24 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
     else:
         st.write("WARN Image generation unavailable — copy is ready")
 
+    st.write("// Running synthetic audience evaluation...")
+    judge_result = None
+    try:
+        from synthetic_judge import run_synthetic_judge
+        from ad_generator import _call
+
+        judge_result = run_synthetic_judge(
+            client, _call, voc_summary, product_intel, variations
+        )
+        if judge_result:
+            st.write(f"OK Predicted winner: {judge_result.variant_scores[judge_result.predicted_winner_index].angle} "
+                     f"(confidence: {judge_result.confidence})")
+        else:
+            st.write("WARN Synthetic evaluation returned no results")
+    except Exception as e:
+        st.write(f"WARN Synthetic evaluation failed: {e}")
+        judge_result = None
+
     if spinner_slot is not None:
         spinner_slot.empty()
 
@@ -260,4 +280,46 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
         product_image_url=product_image_url,
         product_image_b64=product_image_b64,
         brand_logo_b64=brand_logo_b64,
+        judge_result=judge_result,
     )
+
+
+def run_persona_optimization(
+    persona: str,
+    product_intel: dict,
+    voc_brief: dict,
+    existing_variations: list,
+    brand_name: str = "",
+) -> Optional[Tuple[dict, list[Any]]]:
+    """Evaluate ads with persona, generate optimized versions."""
+    from ad_generator import (
+        _evaluate_with_persona,
+        _generate_persona_optimized_ads,
+        _get_client,
+    )
+
+    try:
+        with st.status("Optimizing for persona...", expanded=True) as status:
+            client = _get_client()
+
+            st.write("// Evaluating ads through persona's eyes...")
+            evaluation = _evaluate_with_persona(client, persona, product_intel, existing_variations)
+            st.write("OK Evaluation complete")
+
+            st.write("// Generating optimized ads + images...")
+            optimized = _generate_persona_optimized_ads(
+                client,
+                product_intel,
+                voc_brief,
+                persona,
+                evaluation,
+                brand_name=brand_name,
+            )
+            images_ok = sum(1 for v in optimized if v.image_b64)
+            st.write(f"OK {len(optimized)} optimized ads generated ({images_ok} with images)")
+
+            status.update(label="Persona optimization complete", state="complete", expanded=False)
+        return evaluation, optimized
+    except Exception as exc:
+        st.error(f"Persona optimization failed: {exc}")
+        return None
