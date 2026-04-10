@@ -233,7 +233,13 @@ def _generate_with_progress(request: GenerateRequest, status, spinner_slot=None)
     st.write("OK Ad copy written")
 
     st.write("// Generating image briefs (single request)...")
-    briefs = _generate_all_image_briefs(client, product_intel, variations, brand_name)
+    briefs = _generate_all_image_briefs(
+        client,
+        product_intel,
+        variations,
+        brand_name,
+        persona=voc_summary.synthesized_persona or "",
+    )
     st.session_state.cached_image_briefs = briefs
     st.write("OK Image briefs ready")
 

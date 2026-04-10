@@ -321,6 +321,17 @@ def _render_results(output: AdOutput) -> None:
             for emotion, count in (vs.emotional_distribution or {}).items():
                 emotion_chips += f'<span class="adg-voc-chip">{emotion}: {count}</span>'
 
+            triggers_html = ""
+            if getattr(vs, "conversion_triggers", None):
+                triggers_list = "".join(
+                    f'<span class="adg-voc-chip" style="border-color:rgba(34,211,160,0.3);color:#22D3A0;">{html.escape(t[:80])}</span>'
+                    for t in vs.conversion_triggers[:3]
+                )
+                triggers_html = (
+                    f'<div style="margin-top:0.5rem;"><strong style="font-size:0.7rem;color:#22D3A0;">'
+                    f'What would convert them:</strong><br>{triggers_list}</div>'
+                )
+
             st.markdown(
                 f'<div class="adg-card">'
                 f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">'
@@ -336,6 +347,7 @@ def _render_results(output: AdOutput) -> None:
                 f'<strong>Top objection:</strong> {html.escape(vs.top_objection)}</div>'
                 f'<div style="font-size:0.78rem;color:#4E7090;">'
                 f'<strong>Resonant phrase:</strong> "{html.escape(vs.top_resonant_phrase)}"</div>'
+                f'{triggers_html}'
                 f'</div>',
                 unsafe_allow_html=True,
             )

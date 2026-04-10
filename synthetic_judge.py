@@ -22,6 +22,7 @@ class AgentEvaluation:
     emotional_response: str     # seen, curious, skeptical, annoyed, excited
     resonant_phrase: str
     objection_triggered: str
+    what_would_convert_them: str
     reasoning: str
 
 
@@ -34,6 +35,7 @@ class VariantScore:
     top_objection: str
     top_resonant_phrase: str
     composite_score: float
+    conversion_triggers: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -131,10 +133,17 @@ Agent {a['id']} ({a['label']}):
     system = """
 You are simulating 5 different consumers evaluating 3 ad variants.
 Each agent has a distinct personality, skepticism level, and objection.
-Evaluate each ad AS THAT PERSON, not as a marketing expert.
+Evaluate each ad AS THAT PERSON scrolling Instagram, not as a marketing expert.
 
-A skeptic should be hard to impress. An impulse buyer should react emotionally.
-A researcher should focus on proof and specifics. Stay in character.
+For each evaluation, consider:
+1. SCROLL STOP — Would this image make them pause? Why or why not?
+2. EMOTIONAL HIT — What do they feel in the first second?
+3. RELEVANCE — Does this speak to their specific life situation?
+4. TRUST — Do they believe the claims?
+5. ACTION — Would they actually tap?
+
+A skeptic should score 3-5 on most ads. An impulse buyer should score 6-9.
+A researcher should care about proof elements. Stay in character.
 
 Return ONLY valid JSON — an array of 15 objects (5 agents × 3 ads):
 [
@@ -145,14 +154,15 @@ Return ONLY valid JSON — an array of 15 objects (5 agents × 3 ads):
     "click_likelihood": 6,
     "emotional_response": "curious",
     "resonant_phrase": "the specific phrase from the ad that landed",
-    "objection_triggered": "what made them hesitate or not",
-    "reasoning": "one sentence on why they scored this way"
+    "objection_triggered": "what made them hesitate",
+    "what_would_convert_them": "the ONE specific thing that would make this persona click",
+    "reasoning": "one sentence why they scored this way, in character"
   },
   ...
 ]
 
 Valid emotional_response values: "seen", "curious", "skeptical", "annoyed", "excited"
-Scores are 1-10. Be harsh with skeptics, generous with impulse buyers.
+Scores are 1-10. Different agents MUST give meaningfully different scores.
 """.strip()
 
     user = f"""
@@ -188,6 +198,7 @@ Each agent must evaluate each ad independently. Stay in character for each agent
                 emotional_response=item.get("emotional_response", "seen"),
                 resonant_phrase=item.get("resonant_phrase", ""),
                 objection_triggered=item.get("objection_triggered", ""),
+                what_would_convert_them=item.get("what_would_convert_them", ""),
                 reasoning=item.get("reasoning", ""),
             ))
         return evaluations
@@ -214,6 +225,7 @@ def _aggregate_scores(evaluations: list[AgentEvaluation], variations: list) -> J
                 top_objection="No data",
                 top_resonant_phrase="No data",
                 composite_score=0,
+                conversion_triggers=[],
             ))
             continue
 
@@ -242,6 +254,14 @@ def _aggregate_scores(evaluations: list[AgentEvaluation], variations: list) -> J
                 phrases[key] = phrases.get(key, 0) + 1
         top_phrase = max(phrases, key=phrases.get) if phrases else ""
 
+        triggers = [e.what_would_convert_them for e in var_evals if e.what_would_convert_them]
+        seen = set()
+        unique_triggers: list[str] = []
+        for t in triggers:
+            if t[:50] not in seen:
+                seen.add(t[:50])
+                unique_triggers.append(t)
+
         composite = (mean_ss * 0.4 + mean_cl * 0.6)
 
         variant_scores.append(VariantScore(
@@ -252,6 +272,7 @@ def _aggregate_scores(evaluations: list[AgentEvaluation], variations: list) -> J
             top_objection=top_obj,
             top_resonant_phrase=top_phrase,
             composite_score=round(composite, 1),
+            conversion_triggers=unique_triggers[:3],
         ))
 
     # Predicted winner
